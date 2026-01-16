@@ -1,94 +1,85 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import datetime
+import random
 
-st.set_page_config(page_title="Hệ thống Quản trị Laptop Pro", layout="wide")
+st.set_page_config(page_title="Hệ thống Quản lý Thiết bị Toàn Quốc", layout="wide")
 
-# Link ID gốc của sếp
 SHEET_ID = "16eiLNG46MCmS5GeETnotXW5GyNtvKNYBh_7Zk7IJRfA"
 
-@st.cache_data(ttl=2) # Cập nhật liên tục
-def load_data_from_query():
+@st.cache_data(ttl=1) # Cập nhật mỗi giây
+def load_data_unlimited():
     try:
-        # Sử dụng Visualization API để lấy dữ liệu thay vì Export CSV thông thường
-        # Cách này giúp vượt qua giới hạn dòng của Google
-        URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1"
+        # Tạo số ngẫu nhiên để đánh lừa bộ nhớ đệm của Google
+        rid = random.randint(1, 1000000)
+        # Sử dụng link export thô nhất nhưng ép xóa cache
+        URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&refresh={rid}"
         
-        # Đọc dữ liệu thô
-        df = pd.read_csv(URL)
+        # Đọc dữ liệu (Bỏ qua 2 dòng tiêu đề gộp ô của sếp)
+        df = pd.read_csv(URL, skiprows=2)
         
-        # 1. Xử lý tên cột để tránh lỗi Duplicate
+        # Dọn dẹp tên cột trùng lặp (tránh lỗi Duplicate Column)
         new_cols = []
         counts = {}
-        for i, col in enumerate(df.columns):
-            c_name = str(col).strip().upper()
-            if not c_name or "UNNAMED" in c_name: c_name = f"COLUMN_{i}"
-            if c_name in counts:
-                counts[c_name] += 1
-                new_cols.append(f"{c_name}_{counts[c_name]}")
+        for col in df.columns:
+            c = str(col).strip().upper()
+            if c in counts:
+                counts[c] += 1
+                new_cols.append(f"{c}_{counts[c]}")
             else:
-                counts[c_name] = 0
-                new_cols.append(c_name)
+                counts[c] = 0
+                new_cols.append(c)
         df.columns = new_cols
 
-        # 2. Xác định cột dữ liệu theo tọa độ (Cột F là cột 6 - Index 5)
-        # Vì file sếp có tiêu đề phức tạp, dùng tọa độ là an toàn nhất
-        col_kv = df.columns[5] # Cột Chi Nhánh
-        col_ma = df.columns[1] # Cột Mã Máy
+        # Bốc dữ liệu tại Cột F (Index 5) và Cột B (Index 1)
+        col_kv = df.columns[5] if len(df.columns) > 5 else df.columns[0]
+        col_ma = df.columns[1] if len(df.columns) > 1 else df.columns[0]
 
-        def categorize(val):
+        def fix_region(val):
             v = str(val).strip().upper()
             if any(x in v for x in ["NAM", "MN"]): return "Miền Nam"
             if any(x in v for x in ["BẮC", "MB"]): return "Miền Bắc"
             if any(x in v for x in ["TRUNG", "ĐN", "DN"]): return "Miền Trung"
-            return "Chưa xác định"
+            return "Khác/Chưa nhập"
 
-        df['KHU VỰC'] = df[col_kv].apply(categorize)
-        df['MÃ MÁY CHUẨN'] = df[col_ma].astype(str).str.split('.').str[0]
+        df['Vùng'] = df[col_kv].apply(fix_region)
+        df['Mã số'] = df[col_ma].astype(str).str.split('.').str[0]
         
-        # Lọc bỏ các dòng hoàn toàn trống
-        df = df[df['MÃ MÁY CHUẨN'] != 'nan']
+        # Loại bỏ dòng trắng
+        df = df[df['Mã số'] != 'nan']
         
-        return df, col_kv
+        return df
     except Exception as e:
-        st.error(f"Đang tìm cách kết nối lại... ({e})")
-        return pd.DataFrame(), None
+        st.error(f"Lỗi đồng bộ: {e}")
+        return pd.DataFrame()
 
-df, real_col_name = load_data_from_query()
+df = load_data_unlimited()
 
 st.title("🛡️ Dashboard Quản trị Thiết bị Pro")
 
 if not df.empty:
-    # Sidebar
-    vung_mien = ["Miền Bắc", "Miền Trung", "Miền Nam", "Chưa xác định"]
-    selected = st.sidebar.multiselect("📍 Chọn Miền", vung_mien, default=vung_mien)
-    df_filtered = df[df['KHU VỰC'].isin(selected)]
-
     # KPIs
     c1, c2, c3 = st.columns(3)
-    # Nếu thành công, con số này phải > 3000
-    c1.metric("Tổng lượt lỗi đọc được", len(df_filtered))
-    c2.metric("Số máy hỏng khác nhau", df_filtered['MÃ MÁY CHUẨN'].nunique())
+    # CON SỐ NÀY PHẢI NHẢY LÊN ~3600
+    c1.metric("Tổng số dòng đọc được", len(df))
+    c2.metric("Số máy khác nhau", df['Mã số'].nunique())
     
-    val_mn = len(df[df['KHU VỰC'] == 'Miền Nam'])
-    c3.metric("Số ca Miền Nam", val_mn, delta="Đã quét dòng 3000+" if val_mn > 0 else "Cần check ô màu xanh")
+    val_mn = len(df[df['Vùng'] == 'Miền Nam'])
+    c3.metric("Số ca Miền Nam", val_mn)
 
     st.divider()
 
     # Biểu đồ
-    if not df_filtered.empty:
-        chart_data = df_filtered['KHU VỰC'].value_counts().reset_index()
-        chart_data.columns = ['Vùng', 'Số lượng']
-        fig = px.bar(chart_data, x='Vùng', y='Số lượng', color='Vùng', text_auto=True,
-                     color_discrete_map={"Miền Bắc": "#007bff", "Miền Trung": "#ffc107", "Miền Nam": "#28a745", "Chưa xác định": "#6c757d"})
-        st.plotly_chart(fig, use_container_width=True)
+    chart_data = df['Vùng'].value_counts().reset_index()
+    chart_data.columns = ['Vùng', 'Số lượng']
+    fig = px.bar(chart_data, x='Vùng', y='Số lượng', color='Vùng', text_auto=True,
+                 color_discrete_map={"Miền Nam": "#28a745", "Miền Bắc": "#007bff", "Miền Trung": "#ffc107"})
+    st.plotly_chart(fig, use_container_width=True)
 
-    # PHẦN KIỂM TRA MỐC 3647
-    with st.expander("🔍 Kiểm tra dữ liệu ở dòng 3000+"):
-        st.write(f"Hệ thống đã đọc tổng cộng: **{len(df)}** dòng.")
-        # Hiển thị 100 dòng cuối cùng để sếp đối chiếu với Sheets
+    # BẢNG SOI DÒNG CUỐI (Để sếp đối chiếu dòng 3647)
+    with st.expander("🔍 Kiểm tra 100 dòng cuối cùng từ Sheets"):
+        st.write("Nếu sếp thấy dữ liệu Miền Nam ở đây mà biểu đồ không hiện, báo tôi ngay!")
         st.dataframe(df.tail(100))
 
 else:
-    st.info("Sếp vui lòng kiểm tra lại quyền chia sẻ Link Google Sheets nhé!")
+    st.info("Đang kết nối lại...")
