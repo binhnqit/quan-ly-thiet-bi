@@ -1,25 +1,23 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import random
 
-st.set_page_config(page_title="Hệ thống Quản trị Laptop Pro", layout="wide")
+st.set_page_config(page_title="Hệ thống Quản lý Laptop Pro", layout="wide")
 
-SHEET_ID = "16eiLNG46MCmS5GeETnotXW5GyNtvKNYBh_7Zk7IJRfA"
+# SẾP DÁN CÁI LINK VỪA COPY Ở BƯỚC 1 VÀO ĐÂY
+# Nó sẽ có dạng: https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv
+PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRuNH37yVPVZsAOyyJ4Eqvc0Hsd5XvucmKvw1XyZwhkeV6YVuxhZ14ACHxrtQf-KD-fP0yWlbgpdat-/pubhtml?gid=675485241&single=true"
 
-@st.cache_data(ttl=1)
-def load_data_force_range():
+@st.cache_data(ttl=5)
+def load_data_complete():
     try:
-        rid = random.randint(1, 1000000)
-        # THAY ĐỔI QUAN TRỌNG: Thêm tham số range=A1:Z5000 để ép quét qua dòng 2521
-        URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&range=A1:Z5000&refresh={rid}"
+        # Link xuất bản (Publish) là cách mạnh nhất để lấy đủ 3647 dòng
+        df = pd.read_csv(PUBLISHED_URL)
         
-        df = pd.read_csv(URL)
-        
-        # Đặt tên cột COL_0, COL_1... để an toàn tuyệt đối
+        # Tự động đặt tên cột để tránh lỗi Duplicate
         df.columns = [f"COL_{i}" for i in range(len(df.columns))]
 
-        # TỌA ĐỘ THEO DỮ LIỆU THỰC TẾ: Cột B (1) là Mã máy, Cột D (3) là Chi nhánh
+        # TỌA ĐỘ CHUẨN: Cột B (1) là Mã máy, Cột D (3) là Chi nhánh
         col_kv = "COL_3" 
         col_ma = "COL_1"
 
@@ -30,36 +28,36 @@ def load_data_force_range():
             if any(x in v for x in ["TRUNG", "ĐN", "DN"]): return "Miền Trung"
             return "Khác/Chưa nhập"
 
-        df['VÙNG_HIỆN_THỊ'] = df[col_kv].apply(fix_region)
+        df['VÙNG_MIỀN'] = df[col_kv].apply(fix_region)
         df['MÃ_MÁY_FIX'] = df[col_ma].astype(str).str.split('.').str[0]
         
-        # Lọc dòng trống
+        # Lọc dòng trống và tiêu đề thừa
         df = df[df['MÃ_MÁY_FIX'] != 'nan']
         df = df[~df['MÃ_MÁY_FIX'].str.contains("STT|MÃ|THEO", na=False)]
         
         return df
     except Exception as e:
-        st.error(f"Đang đồng bộ... ({e})")
+        st.error(f"Lỗi kết nối: {e}")
         return pd.DataFrame()
 
-df = load_data_force_range()
+df = load_data_complete()
 
 st.title("🛡️ Dashboard Quản trị Thiết bị Pro")
 
 if not df.empty:
     # KPIs
     c1, c2, c3 = st.columns(3)
-    # Hy vọng con số này sẽ nhảy lên 3647
+    # Con số này PHẢI vượt qua 2521
     c1.metric("Tổng lượt lỗi thực tế", len(df))
     c2.metric("Số máy hỏng khác nhau", df['MÃ_MÁY_FIX'].nunique())
     
-    val_mn = len(df[df['VÙNG_HIỆN_THỊ'] == 'Miền Nam'])
-    c3.metric("Số ca Miền Nam", val_mn, delta="Dòng 3000+" if val_mn > 0 else None)
+    val_mn = len(df[df['VÙNG_MIỀN'] == 'Miền Nam'])
+    c3.metric("Số ca Miền Nam", val_mn)
 
     st.divider()
 
-    # Biểu đồ theo màu nhận diện thương hiệu
-    chart_data = df['VÙNG_HIỆN_THỊ'].value_counts().reset_index()
+    # Biểu đồ màu chuẩn
+    chart_data = df['VÙNG_MIỀN'].value_counts().reset_index()
     chart_data.columns = ['Vùng', 'Số lượng']
     fig = px.bar(chart_data, x='Vùng', y='Số lượng', color='Vùng', text_auto=True,
                  color_discrete_map={
@@ -70,10 +68,9 @@ if not df.empty:
                  })
     st.plotly_chart(fig, use_container_width=True)
 
-    # PHẦN KIỂM TRA MẤU CHỐT
-    with st.expander("🔍 Kiểm tra mốc dữ liệu 3647"):
-        st.write(f"Số dòng hệ thống vừa quét được: **{len(df)}**")
-        st.dataframe(df.tail(100))
-
+    # PHẦN KIỂM CHỨNG TỐI THƯỢNG
+    with st.expander("🔍 Kiểm tra dòng cuối cùng (Mốc 3647)"):
+        st.write(f"Hệ thống đã đọc được tổng cộng: **{len(df)}** dòng.")
+        st.dataframe(df.tail(50))
 else:
-    st.info("Sếp vui lòng chờ trong giây lát...")
+    st.info("Sếp vui lòng dán link 'Xuất bản lên web' vào code nhé!")
