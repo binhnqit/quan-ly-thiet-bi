@@ -103,4 +103,17 @@ if not df_raw.empty:
             'Khu vực': 'first',
             'Tình trạng': lambda x: ' | '.join(x.unique()),
             'Tổng chi phí': 'sum',
-            'M
+            'Mã số máy': 'count'
+        }).rename(columns={'Mã số máy': 'Số lần hỏng'}).reset_index()
+        
+        st.table(summary_bad.sort_values('Số lần hỏng', ascending=False))
+        st.info("💡 Lời khuyên: Các máy có số lần hỏng > 3 hoặc chi phí sửa chữa vượt 50% giá trị máy nên được xem xét thanh lý.")
+    else:
+        st.success("Chưa phát hiện máy nào hỏng lặp lại trong bộ lọc này.")
+
+    # 4. Bảng dữ liệu thô
+    with st.expander("🔍 Xem toàn bộ Nhật ký chi tiết"):
+        st.dataframe(df, use_container_width=True)
+
+else:
+    st.warning("Đang kết nối dữ liệu...")
