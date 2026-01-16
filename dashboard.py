@@ -63,15 +63,14 @@ df_filtered = df[mask]
 st.title("🛡️ Enterprise IT Asset Management - AI Driven")
 
 # 1. 💬 AI CHATBOT ASSISTANT
-# --- LOGIC CHATBOT NÂNG CẤP (CHUYÊN GIA 15 NĂM) ---
-# --- LOGIC CHATBOT THỰC TẾ (QUÉT TOÀN BỘ DATA) ---
+# --- LOGIC CHATBOT THỰC TẾ (QUÉT TOÀN BỘ 3.976 DÒNG) ---
 st.subheader("💬 Trợ lý ảo Quản trị thiết bị")
 with st.container(border=True):
     col_ai, col_inp = st.columns([1, 4])
     col_ai.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=80)
     
     with col_inp:
-        user_msg = st.text_input("Tra cứu hồ sơ máy:", placeholder="Ví dụ: 'Máy 5281 hỏng những gì?'", key="chat_v3")
+        user_msg = st.text_input("Tra cứu nhanh hồ sơ thiết bị:", placeholder="Ví dụ: 'Máy 5281 hỏng mấy lần?'", key="chat_final")
         
         if user_msg:
             import re
@@ -79,31 +78,31 @@ with st.container(border=True):
             
             if match:
                 code = str(match.group()).strip()
-                # QUAN TRỌNG: Quét trên 'df' gốc (toàn bộ data), không quét trên 'df_filtered'
+                # QUAN TRỌNG: Quét trên 'df' gốc (toàn bộ data), không bị kẹt bởi bộ lọc Sidebar
                 full_history = df[df['MÃ_MÁY'].astype(str).str.contains(code)]
                 
                 if not full_history.empty:
-                    st.markdown(f"🤖 **AI Trả lời:** Đã tìm thấy hồ sơ cho máy **{code}**:")
+                    st.markdown(f"🤖 **AI Trả lời:** Đã tìm thấy lịch sử cho máy **{code}**:")
                     
-                    # Liệt kê số lần và danh sách lỗi thực tế
                     num_fixes = len(full_history)
-                    # Tạo danh sách liệt kê các lần hỏng
-                    st.write(f"✅ **Tổng số lần ghi nhận hỏng:** {num_fixes} lần.")
+                    st.success(f"📊 **Tổng số lần ghi nhận hỏng:** {num_fixes} lần.")
                     
-                    st.write("**Lịch sử chi tiết (từ mới đến cũ):**")
+                    # Liệt kê thực tế từng lần hỏng
+                    st.write("**Chi tiết các đợt sửa chữa:**")
                     for i, row in full_history.sort_values('NGAY_FIX', ascending=False).iterrows():
-                        ngay = row['NGAY_FIX'].strftime('%d/%m/%Y')
+                        # Lấy ngày từ cột 6
+                        ngay = row['NGAY_FIX'].strftime('%d/%m/%Y') if pd.notna(row['NGAY_FIX']) else "Không rõ ngày"
                         loi = row['LÝ_DO_HỎNG']
                         vung = row['VÙNG_MIỀN']
-                        st.write(f"* Ngày **{ngay}**: Lỗi **{loi}** ({vung})")
+                        st.write(f"* **{ngay}**: Lỗi **{loi}** (Khu vực: {vung})")
                     
-                    # Đưa ra nhận định dựa trên số lần hỏng
+                    # Đưa ra nhận định chuyên gia 15 năm
                     if num_fixes >= 3:
-                        st.error(f"⚠️ **Cảnh báo:** Máy {code} hỏng quá nhiều ({num_fixes} lần). Sếp nên xem xét thanh lý để tránh tốn thêm chi phí linh kiện.")
+                        st.error(f"⚠️ **Cảnh báo:** Máy {code} hỏng quá nhiều ({num_fixes} lần). Sếp nên xem xét thanh lý sớm.")
                 else:
-                    st.error(f"🤖 AI Trả lời: Không tìm thấy mã máy {code} trong tổng số 3.976 dòng dữ liệu. Sếp kiểm tra lại mã trên file gốc nhé!")
+                    st.error(f"🤖 AI Trả lời: Không tìm thấy mã máy {code} trong toàn bộ hệ thống. Sếp kiểm tra lại mã số nhé!")
             else:
-                st.info("🤖 AI Trả lời: Sếp nhập mã máy để em tra cứu chi tiết ạ.")
+                st.info("🤖 AI Trả lời: Sếp nhập mã máy để em lục lại hồ sơ bệnh án cho ạ.")
 # 2. 🔮 AI INVENTORY FORECAST (Dự báo mua linh kiện) 
 st.subheader("🔮 Dự báo mua linh kiện thay thế (30 ngày tới)")
 if not df_filtered.empty:
