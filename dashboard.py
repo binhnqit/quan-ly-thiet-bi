@@ -4,38 +4,40 @@ import plotly.express as px
 
 st.set_page_config(page_title="Hệ thống Quản lý Laptop Pro", layout="wide")
 
-# Link kết nối trực tiếp
+# Link kết nối trực tiếp từ Sheets của sếp
 SHEET_ID = "16eiLNG46MCmS5GeETnotXW5GyNtvKNYBh_7Zk7IJRfA"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv"
 
 @st.cache_data(ttl=1)
-def load_data_final_fix():
+def load_data_final():
     try:
+        # Đọc dữ liệu thô
         df = pd.read_csv(URL)
         
-        # --- FIX LỖI TRÙNG TÊN CỘT (PHƯƠNG ÁN AN TOÀN NHẤT) ---
-        new_cols = []
-        counts = {}
+        # 1. Xử lý trùng tên cột ngay lập tức (Xóa lỗi ValueError)
+        cols = []
+        count = {}
         for col in df.columns:
-            if col in counts:
-                counts[col] += 1
-                new_cols.append(f"{col}_{counts[col]}")
+            c_name = str(col).strip()
+            if c_name in count:
+                count[c_name] += 1
+                cols.append(f"{c_name}_{count[c_name]}")
             else:
-                counts[col] = 0
-                new_cols.append(col)
-        df.columns = new_cols
+                count[c_name] = 0
+                cols.append(c_name)
+        df.columns = cols
+
+        # 2. Làm sạch tên cột để dễ xử lý logic
+        df.columns = [str(c).upper() for c in df.columns]
         
-        # Làm sạch tên cột
-        df.columns = [str(c).strip().upper() for c in df.columns]
-        
-        # Tìm cột Chi Nhánh (Cột F) và Mã Máy
+        # 3. Tìm cột Chi Nhánh (Cột F) và Mã Máy
         col_kv = next((c for c in df.columns if any(k in c for k in ["CHI NHÁNH", "KHU VỰC", "CHI NHANH"])), None)
         if not col_kv and len(df.columns) > 5: col_kv = df.columns[5]
         
         col_ma = next((c for c in df.columns if "MÁY" in c or "MASOMAY" in c), None)
         if not col_ma and len(df.columns) > 1: col_ma = df.columns[1]
 
-        # Chuẩn hóa Vùng Miền
+        # 4. Chuẩn hóa Vùng Miền (Bắt chữ MN cho Miền Nam)
         def fix_region(val):
             v = str(val).strip().upper()
             if any(x in v for x in ["NAM", "MN"]): return "Miền Nam"
@@ -48,14 +50,15 @@ def load_data_final_fix():
         
         if col_ma:
             df['MÃ MÁY CHUẨN'] = df[col_ma].astype(str).str.split('.').str[0]
+            # Loại bỏ dòng không có mã máy (dòng trống cuối file)
             df = df[df['MÃ MÁY CHUẨN'] != 'nan']
         
         return df, col_kv
     except Exception as e:
-        st.error(f"Đang đồng bộ... ({e})")
+        st.error(f"Đang đồng bộ dữ liệu... ({e})")
         return pd.DataFrame(), None
 
-df, real_col = load_data_final_fix()
+df, real_col = load_data_final()
 
 st.title("🛡️ Dashboard Quản trị Thiết bị Pro")
 
@@ -73,7 +76,7 @@ if not df.empty:
     c2.metric("Số máy hỏng", df_filtered['MÃ MÁY CHUẨN'].nunique() if 'MÃ MÁY CHUẨN' in df.columns else 0)
     
     val_mn = len(df[df['VÙNG MIỀN'] == 'Miền Nam'])
-    c3.metric("Số ca Miền Nam", val_mn, delta="OK" if val_mn > 0 else "Kiểm tra ô màu xanh")
+    c3.metric("Dữ liệu Miền Nam", val_mn, delta="Đã nhận diện" if val_mn > 0 else "Kiểm tra ô MN")
 
     st.divider()
 
@@ -85,10 +88,6 @@ if not df.empty:
                      color_discrete_map={"Miền Bắc": "#007bff", "Miền Trung": "#ffc107", "Miền Nam": "#28a745"})
         st.plotly_chart(fig, use_container_width=True)
 
-    # Xem 100 dòng cuối (Quan trọng nhất để soi Miền Nam)
+    # Xem dữ liệu thô (Đã fix lỗi Duplicate Column)
     with st.expander("🔍 Soi dữ liệu thô (Dành cho sếp)"):
-        st.write(f"Đang đọc dữ liệu từ cột: **{real_col}**")
-        st.dataframe(df.tail(100))
-
-else:
-    st.info("Vui lòng đợi vài giây để dữ liệu tải về...")
+        st.write(f"Dữ liệu được lấy từ cột: **{real_col}**")
