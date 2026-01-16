@@ -148,3 +148,52 @@ with tab2:
         <p><i>Hệ thống được vận hành bởi AI Expert v5.1</i></p>
     </div>
     """, unsafe_allow_html=True)
+    # --- PHẦN TỐI ƯU DỰ BÁO CHI PHÍ ---
+    st.divider()
+    st.subheader("💰 Kế hoạch Ngân sách & Dự báo Tài chính (Tháng tới)")
+    
+    # 1. Định nghĩa bảng giá linh kiện thực tế (Sếp có thể điều chỉnh số liệu ở đây)
+    pricing_dict = {
+        "Phím": 450000,
+        "Pin": 950000,
+        "Màn hình": 1800000,
+        "Sạc": 350000,
+        "Nguồn": 1200000,
+        "Ổ cứng": 1100000,
+        "Vệ sinh": 150000,
+        "Chưa rõ": 500000 # Chi phí dự phòng cho lỗi lạ
+    }
+
+    if not df_filtered.empty:
+        # 2. Tính toán tần suất hỏng theo loại linh kiện
+        def get_main_component(reason):
+            for k in pricing_dict.keys():
+                if k.lower() in reason.lower(): return k
+            return "Chưa rõ"
+
+        df_filtered['LINH_KIỆN'] = df_filtered['LÝ_DO_HỎNG'].apply(get_main_component)
+        comp_stats = df_filtered['LINH_KIỆN'].value_counts().reset_index()
+        comp_stats.columns = ['Linh kiện', 'Số ca kỳ này']
+
+        # 3. Thuật toán dự báo: (Trung bình tháng * Hệ số tăng trưởng 1.2)
+        n_months_act = len(sel_months) if sel_months else 1
+        comp_stats['Dự báo tháng tới'] = comp_stats['Số ca kỳ này'].apply(lambda x: math.ceil((x/n_m)*1.2))
+        comp_stats['Đơn giá (đ)'] = comp_stats['Linh kiện'].map(pricing_dict)
+        comp_stats['Thành tiền (đ)'] = comp_stats['Dự báo tháng tới'] * comp_stats['Đơn giá (đ)']
+
+        # Hiển thị số liệu tổng quát
+        total_est = comp_stats['Thành tiền (đ)'].sum()
+        
+        c_fin1, c_fin2 = st.columns([6, 4])
+        with c_fin1:
+            st.write("**Bảng kê dự toán mua sắm linh kiện:**")
+            st.dataframe(comp_stats[['Linh kiện', 'Dự báo tháng tới', 'Thành tiền (đ)']], use_container_width=True)
+            st.warning(f"💡 **Tổng ngân sách đề xuất cho {len(sel_vung)} miền:** {total_est:,.0f} VNĐ")
+        
+        with c_fin2:
+            fig_budget = px.pie(comp_stats, values='Thành tiền (đ)', names='Linh kiện', 
+                               title="Cơ cấu chi phí theo linh kiện",
+                               hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
+            st.plotly_chart(fig_budget, use_container_width=True)
+
+    st.divider()
