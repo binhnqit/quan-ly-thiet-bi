@@ -63,21 +63,41 @@ df_filtered = df[mask]
 st.title("🛡️ Enterprise IT Asset Management - AI Driven")
 
 # 1. 💬 AI CHATBOT ASSISTANT
-st.subheader("💬 Trợ lý ảo Quản trị thiết bị")
+# --- LOGIC CHATBOT NÂNG CẤP ---
 with st.container(border=True):
     col_ai, col_inp = st.columns([1, 4])
     col_ai.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=80)
     
     with col_inp:
-        user_msg = st.text_input("Sếp cần tra cứu nhanh gì không?", placeholder="Ví dụ: 'Máy 2498 hỏng mấy lần?' hoặc 'Tháng sau cần mua gì?'")
+        user_msg = st.text_input("Tra cứu nhanh hồ sơ thiết bị:", placeholder="Ví dụ: 'Máy 2823 lỗi mấy lần?'")
+        
         if user_msg:
-            # Logic Chatbot phản hồi giả lập (Sẵn sàng kết nối API)
-            if any(char.isdigit() for char in user_msg):
-                st.write("🤖 **AI:** Đang truy quét lịch sử mã máy... Tôi thấy mã này có tiền sử lỗi linh kiện cao, sếp nên kiểm tra kỹ.")
+            # 1. Tách mã máy từ câu hỏi của sếp
+            import re
+            match = re.search(r'\d+', user_msg)
+            
+            if match:
+                code = match.group()
+                # 2. Truy vấn dữ liệu thực tế
+                machine_data = df[df['MÃ_MÁY'] == code]
+                
+                if not machine_data.empty:
+                    num_fixes = len(machine_data)
+                    reasons = ", ".join(machine_data['LÝ_DO_HỎNG'].unique())
+                    last_fix = machine_data['NGAY_FIX'].max().strftime('%d/%m/%Y')
+                    
+                    # 3. Trả lời thực tế và chi tiết
+                    st.write(f"🤖 **AI Trả lời:**")
+                    st.success(f"Dữ liệu máy **{code}**: Đã ghi nhận **{num_fixes} lần sửa chữa**.")
+                    st.write(f"* **Các lỗi đã gặp:** {reasons}")
+                    st.write(f"* **Lần sửa gần nhất:** {last_fix}")
+                    
+                    if num_fixes >= 3:
+                        st.warning("⚠️ **Tư vấn AI:** Máy này hỏng lặp lại nhiều lần, sếp nên cân nhắc thay mới thay vì tiếp tục sửa chữa.")
+                else:
+                    st.write(f"🤖 **AI Trả lời:** Xin lỗi sếp, mã máy **{code}** chưa có trong dữ liệu hệ thống.")
             else:
-                st.write("🤖 **AI:** Dựa trên 4.000 dòng dữ liệu, tôi dự báo linh kiện Phím và Pin sẽ tiếp tục tăng trong tháng tới.")
-
-st.divider()
+                st.write("🤖 **AI Trả lời:** Sếp vui lòng nhập kèm mã máy để em tra cứu hồ sơ chính xác ạ!")
 
 # 2. 🔮 AI INVENTORY FORECAST (Dự báo mua linh kiện) 
 st.subheader("🔮 Dự báo mua linh kiện thay thế (30 ngày tới)")
