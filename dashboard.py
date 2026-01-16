@@ -63,42 +63,53 @@ df_filtered = df[mask]
 st.title("🛡️ Enterprise IT Asset Management - AI Driven")
 
 # 1. 💬 AI CHATBOT ASSISTANT
-# --- LOGIC CHATBOT NÂNG CẤP ---
+# --- LOGIC CHATBOT NÂNG CẤP (CHUYÊN GIA 15 NĂM) ---
+st.subheader("💬 Trợ lý ảo Quản trị thiết bị")
 with st.container(border=True):
     col_ai, col_inp = st.columns([1, 4])
     col_ai.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=80)
     
     with col_inp:
-        user_msg = st.text_input("Tra cứu nhanh hồ sơ thiết bị:", placeholder="Ví dụ: 'Máy 2823 lỗi mấy lần?'")
+        user_msg = st.text_input("Tra cứu hồ sơ máy:", placeholder="Ví dụ: 'Máy 3534 hỏng những gì?'", key="chat_input")
         
         if user_msg:
-            # 1. Tách mã máy từ câu hỏi của sếp
             import re
+            # Trích xuất tất cả các số có trong câu hỏi của sếp
             match = re.search(r'\d+', user_msg)
             
             if match:
-                code = match.group()
-                # 2. Truy vấn dữ liệu thực tế
-                machine_data = df[df['MÃ_MÁY'] == code]
+                code = str(match.group()).strip()
+                # Đồng nhất kiểu dữ liệu để truy vấn chính xác 100%
+                df['MÃ_MÁY_STR'] = df['MÃ_MÁY'].astype(str).str.strip()
+                machine_data = df[df['MÃ_MÁY_STR'] == code]
                 
                 if not machine_data.empty:
                     num_fixes = len(machine_data)
-                    reasons = ", ".join(machine_data['LÝ_DO_HỎNG'].unique())
-                    last_fix = machine_data['NGAY_FIX'].max().strftime('%d/%m/%Y')
+                    # Lấy danh sách linh kiện/lý do hỏng, loại bỏ trùng lặp
+                    reasons = machine_data['LÝ_DO_HỎNG'].unique().tolist()
+                    reasons_str = ", ".join(reasons)
                     
-                    # 3. Trả lời thực tế và chi tiết
-                    st.write(f"🤖 **AI Trả lời:**")
-                    st.success(f"Dữ liệu máy **{code}**: Đã ghi nhận **{num_fixes} lần sửa chữa**.")
-                    st.write(f"* **Các lỗi đã gặp:** {reasons}")
-                    st.write(f"* **Lần sửa gần nhất:** {last_fix}")
-                    
-                    if num_fixes >= 3:
-                        st.warning("⚠️ **Tư vấn AI:** Máy này hỏng lặp lại nhiều lần, sếp nên cân nhắc thay mới thay vì tiếp tục sửa chữa.")
-                else:
-                    st.write(f"🤖 **AI Trả lời:** Xin lỗi sếp, mã máy **{code}** chưa có trong dữ liệu hệ thống.")
-            else:
-                st.write("🤖 **AI Trả lời:** Sếp vui lòng nhập kèm mã máy để em tra cứu hồ sơ chính xác ạ!")
+                    # Lấy lịch sử theo dòng thời gian
+                    history_list = machine_data.sort_values('NGAY_FIX', ascending=False)
+                    last_fix = history_list['NGAY_FIX'].iloc[0].strftime('%d/%m/%Y')
 
+                    st.markdown(f"🤖 **AI Trả lời:**")
+                    st.success(f"Đã tìm thấy hồ sơ máy **{code}**")
+                    
+                    # Trình bày dạng danh sách chuyên nghiệp
+                    st.write(f"📊 **Thống kê:** Máy đã sửa tổng cộng **{num_fixes} lần**.")
+                    st.write(f"🛠️ **Chi tiết hư hỏng:** {reasons_str}")
+                    st.write(f"📅 **Cập nhật cuối:** Lần gần nhất sửa vào ngày {last_fix}.")
+                    
+                    # Đưa ra nhận định chuyên gia
+                    if num_fixes >= 3:
+                        st.error(f"🚩 **Cảnh báo chuyên gia:** Máy {code} có tỷ lệ hỏng lặp lại cao. Khuyên sếp nên kiểm tra tổng thể hoặc thanh lý để tối ưu chi phí vận hành.")
+                    else:
+                        st.info(f"✅ **Đánh giá:** Thiết bị vẫn trong ngưỡng vận hành ổn định.")
+                else:
+                    st.error(f"🤖 **AI Trả lời:** Sếp ơi, mã máy **{code}** chưa có trong dữ liệu hoặc sếp kiểm tra lại mã trên file gốc giúp em ạ!")
+            else:
+                st.warning("🤖 **AI Trả lời:** Sếp nhập giúp em cái mã số máy (ví dụ: 3534) để em 'lục kho' dữ liệu cho sếp nhé!")
 # 2. 🔮 AI INVENTORY FORECAST (Dự báo mua linh kiện) 
 st.subheader("🔮 Dự báo mua linh kiện thay thế (30 ngày tới)")
 if not df_filtered.empty:
