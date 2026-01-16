@@ -29,7 +29,7 @@ def load_data_enterprise():
         df = df[~df['MÃ_MÁY'].str.contains("STT|MÃ|THEO", na=False)]
         return df
     except Exception as e:
-        st.error(f"Lỗi: {e}")
+        st.error(f"Lỗi kết nối dữ liệu: {e}")
         return pd.DataFrame()
 
 df = load_data_enterprise()
@@ -40,13 +40,14 @@ with st.sidebar:
     list_vung = ["Miền Bắc", "Miền Trung", "Miền Nam"]
     selected_vung = st.multiselect("Lọc theo Vùng", list_vung, default=list_vung)
     
-    # Lọc theo tháng (Nếu có dữ liệu ngày tháng)
+    # Lọc theo tháng
     df['MONTH'] = df['NGAY_FIX'].dt.month
-    list_month = sorted([m for m in df['MONTH'].unique() if pd.notna(m)])
-    selected_month = st.multiselect("Lọc theo Tháng", options=list_month, default=list_month, format_func=lambda x: f"Tháng {int(x)}")
+    list_month = sorted([int(m) for m in df['MONTH'].unique() if pd.notna(m)])
+    selected_month = st.multiselect("Lọc theo Tháng", options=list_month, default=list_month, format_func=lambda x: f"Tháng {x}")
     
     st.divider()
-    st.download_button("📥 Tải báo cáo CSV", df.to_csv(index=False).encode('utf-8-sig'), "bao_cao_tong.csv")
+    csv_data = df.to_csv(index=False).encode('utf-8-sig')
+    st.download_button("📥 Tải báo cáo CSV", data=csv_data, file_name="bao_cao_laptop.csv", mime="text/csv")
 
 # Áp dụng bộ lọc cho Dashboard chung
 df_filtered = df[(df['VÙNG_MIỀN'].isin(selected_vung)) & (df['MONTH'].isin(selected_month))]
@@ -61,15 +62,24 @@ search_query = st.text_input("Nhập Mã máy để truy vết lịch sử (VD: 
 if search_query:
     machine_history = df[df['MÃ_MÁY'] == search_query]
     if not machine_history.empty:
-        with st.container(border=True):
+        with st.container():
             st.info(f"📋 **HỒ SƠ THIẾT BỊ: {search_query}**")
             m1, m2, m3 = st.columns(3)
             num_fixes = len(machine_history)
             m1.metric("Tổng lần hỏng", f"{num_fixes} lần")
             m2.metric("Khu vực", machine_history['VÙNG_MIỀN'].iloc[0])
-            status = "🚨 NGUY CƠ CAO" if num_fixes >= 3 else ("⚠️ CẦN THEO DÕI" if num_fixes == 2 else "✅ BÌNH THƯỜNG")
+            
+            if num_fixes >= 3:
+                status, color = "🚨 NGUY CƠ CAO", "inverse"
+            elif num_fixes == 2:
+                status, color = "⚠️ CẦN THEO DÕI", "off"
+            else:
+                status, color = "✅ BÌNH THƯỜNG", "normal"
+            
             m3.metric("Tình trạng", status)
-            st.table(machine_history[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']].sort_values(by='NGAY_FIX', ascending=False))
+            
+            history_display = machine_history[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']].sort_values(by='NGAY_FIX', ascending=False)
+            st.table(history_display)
     else:
         st.error(f"❌ Không tìm thấy mã máy '{search_query}'")
 
@@ -79,24 +89,27 @@ st.divider()
 st.markdown("### 📊 Dashboard Phân tích chung")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Tổng lượt lỗi", f"{len(df_filtered):,}")
-c2.metric("Số máy phát sinh lỗi", f"{df_filtered['MÃ_MÁY'].nunique():,}")
-# Tính máy hỏng nặng (>=3 lần)
+c2.metric("Số máy đang lỗi", f"{df_filtered['MÃ_MÁY'].nunique():,}")
+
 repeat_df = df_filtered['MÃ_MÁY'].value_counts()
 critical_count = len(repeat_df[repeat_df >= 3])
 c3.metric("🚨 Máy hỏng nặng (>=3 lần)", critical_count)
-c4.metric("Lý do phổ biến nhất", df_filtered['LÝ_DO_HỎNG'].mode()[0] if not df_filtered.empty else "N/A")
+
+top_reason = df_filtered['LÝ_DO_HỎNG'].mode()[0] if not df_filtered.empty else "N/A"
+c4.metric("Lý do phổ biến", top_reason)
 
 st.divider()
 
-# BIỂU ĐỒ
+# BIỂU ĐỒ 
 col_left, col_right = st.columns([6, 4])
 
 with col_left:
     st.subheader("🛠️ Top 15 Lý do hỏng / Linh kiện (Cột D)")
     reason_counts = df_filtered['LÝ_DO_HỎNG'].value_counts().head(15).reset_index()
-    fig_reason = px.bar(reason_counts, x='count', y='LÝ_DO_HỎNG', orientation='h', 
-                       text_auto=True, color='count', color_continuous_scale='Reds')
-    fig_reason.update_layout(yaxis={'categoryorder':'total ascending'})
+    reason_counts.columns = ['Lý do', 'Số lượng']
+    fig_reason = px.bar(reason_counts, x='Số lượng', y='Lý do', orientation='h', 
+                       text_auto=True, color='Số lượng', color_continuous_scale='Reds')
+    fig_reason.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False)
     st.plotly_chart(fig_reason, use_container_width=True)
 
 with col_right:
@@ -107,6 +120,10 @@ with col_right:
     st.plotly_chart(fig_pie, use_container_width=True)
 
 # THỐNG KÊ DANH SÁCH ĐEN
-st.subheader("🚩 Top 10 Máy hỏng nhiều lần nhất (Cần xem xét thanh lý)")
+st.subheader("🚩 Top 10 Máy hỏng nhiều lần nhất")
 bad_machines = repeat_df.head(10).reset_index()
-bad_machines.columns = ['Mã Máy', 'Số lần ghi nhận h
+bad_machines.columns = ['Mã Máy', 'Số lần hỏng']
+st.dataframe(bad_machines, use_container_width=True)
+
+with st.expander("📋 Xem toàn bộ nhật ký chi tiết"):
+    st.dataframe(df_filtered[['MÃ_MÁY', 'VÙNG_MIỀN', 'LÝ_DO_HỎNG', 'COL_6']].tail(100), use_container_width=True)
