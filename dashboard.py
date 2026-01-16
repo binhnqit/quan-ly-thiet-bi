@@ -2,20 +2,22 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import math
-import base64
 
-# 1. CẤU HÌNH GIAO DIỆN
+# 1. CẤU HÌNH GIAO DIỆN PRO
 st.set_page_config(page_title="Hệ Thống Quản Trị Tài Sản AI", layout="wide")
 
+# CSS tạo phong cách doanh nghiệp chuyên nghiệp
 st.markdown("""
     <style>
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .guide-box { background-color: #f0f7ff; padding: 20px; border-radius: 10px; border-left: 5px solid #1E3A8A; }
-    h1 { color: #1E3A8A; text-align: center; }
+    .main { background-color: #f5f7f9; }
+    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-top: 4px solid #1E3A8A; }
+    .guide-box { background-color: #ffffff; padding: 25px; border-radius: 12px; border-left: 6px solid #1E3A8A; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    h1 { color: #1E3A8A; font-weight: 800; text-align: center; margin-bottom: 30px; }
+    h3 { color: #1E3A8A; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. KẾT NỐI DỮ LIỆU
+# 2. KẾT NỐI DỮ LIỆU TỪ GOOGLE SHEETS
 PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRuNH37yVPVZsAOyyJ4Eqvc0Hsd5XvucmKvw1XyZwhkeV6YVuxhZ14ACHxrtQf-KD-fP0yWlbgpdat-/pub?gid=675485241&single=true&output=csv"
 
 @st.cache_data(ttl=60)
@@ -24,6 +26,7 @@ def load_data_final():
         df = pd.read_csv(PUBLISHED_URL, on_bad_lines='skip')
         df.columns = [f"COL_{i}" for i in range(len(df.columns))]
         
+        # Tiền xử lý dữ liệu vùng miền
         def detect_region(row):
             text = " ".join(row.astype(str)).upper()
             if any(x in text for x in ["NAM", "MN"]): return "Miền Nam"
@@ -40,90 +43,108 @@ def load_data_final():
         df['THÁNG'] = df['NGAY_FIX'].dt.month
         return df
     except Exception as e:
-        st.error(f"Lỗi tải dữ liệu: {e}")
+        st.error(f"Lỗi hệ thống: {e}")
         return pd.DataFrame()
 
 df = load_data_final()
 
 # --- SIDEBAR: BỘ LỌC CHIẾN LƯỢC ---
 with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/1063/1063376.png", width=80)
     st.title("🛡️ BỘ LỌC AI")
-    list_years = sorted(df['NĂM'].unique(), reverse=True)
-    sel_year = st.selectbox("📅 Chọn Năm", list_years)
     
-    list_vung = sorted(df['VÙNG_MIỀN'].unique())
-    sel_vung = st.multiselect("📍 Chọn Miền", list_vung, default=list_vung)
-    
-    df_temp = df[(df['NĂM'] == sel_year) & (df['VÙNG_MIỀN'].isin(sel_vung))]
-    list_months = sorted(df_temp['THÁNG'].unique())
-    sel_months = st.multiselect("📆 Chọn Tháng", list_months, default=list_months)
-    
-    st.divider()
-    # TÍNH NĂNG XUẤT CSV (Để sếp lưu về máy nhanh nhất)
-    if not df_temp.empty:
-        csv = df_temp.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📄 Tải Báo Cáo (CSV)",
-            data=csv,
-            file_name=f'Bao_cao_tai_san_{sel_year}.csv',
-            mime='text/csv',
-        )
+    if not df.empty:
+        list_years = sorted(df['NĂM'].unique(), reverse=True)
+        sel_year = st.selectbox("📅 Năm báo cáo", list_years)
+        
+        list_vung = sorted(df['VÙNG_MIỀN'].unique())
+        sel_vung = st.multiselect("📍 Khu vực (Vùng)", list_vung, default=list_vung)
+        
+        df_temp = df[(df['NĂM'] == sel_year) & (df['VÙNG_MIỀN'].isin(sel_vung))]
+        list_months = sorted(df_temp['THÁNG'].unique())
+        sel_months = st.multiselect("📆 Tháng phân tích", list_months, default=list_months, format_func=lambda x: f"Tháng {x}")
+        
+        st.divider()
+        # Xuất dữ liệu CSV
+        csv_data = df_temp.to_csv(index=False).encode('utf-8-sig')
+        st.download_button("📄 Tải Báo Cáo (Excel/CSV)", data=csv_data, file_name=f'Bao_cao_{sel_year}.csv', mime='text/csv')
 
-# Lọc dữ liệu chính (ĐÃ FIX LỖI VÙNG_MIỀF)
-df_filtered = df[(df['NĂM'] == sel_year) & 
-                 (df['THÁNG'].isin(sel_months)) & 
-                 (df['VÙNG_MIỀN'].isin(sel_vung))]
+# --- LOGIC LỌC DỮ LIỆU ---
+if not df.empty:
+    df_filtered = df[(df['NĂM'] == sel_year) & 
+                     (df['THÁNG'].isin(sel_months)) & 
+                     (df['VÙNG_MIỀN'].isin(sel_vung))]
+else:
+    df_filtered = pd.DataFrame()
 
-# --- GIAO DIỆN TABS ---
-tab1, tab2 = st.tabs(["📊 Báo Cáo Chiến Lược", "📖 Hướng Dẫn Vận Hành"])
+# --- GIAO DIỆN CHÍNH ---
+tab1, tab2 = st.tabs(["📊 BÁO CÁO CHIẾN LƯỢC", "📖 HƯỚNG DẪN VẬN HÀNH"])
 
 with tab1:
     st.title("🛡️ HỆ THỐNG QUẢN TRỊ TÀI SẢN CHIẾN LƯỢC AI")
     
-    # KPI ROWS
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Tổng lượt hỏng", f"{len(df_filtered)} ca")
+    # 1. KPI TỔNG QUAN
+    col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
+    col_kpi1.metric("Tổng lượt hỏng kỳ này", f"{len(df_filtered)} ca")
     
-    # Tính dự báo ngân sách
+    # Dự báo ngân sách
     forecast_counts = df_filtered['LÝ_DO_HỎNG'].value_counts().head(5)
     n_m = len(sel_months) if sel_months else 1
     est_budget = sum([math.ceil((v/n_m)*1.2)*500000 for v in forecast_counts.values])
+    col_kpi2.metric("Ngân sách dự phòng", f"{est_budget:,.0f}đ")
     
-    c2.metric("Ngân sách dự phòng", f"{est_budget:,.0f}đ")
-    c3.metric("Số máy Đỏ (Cần thanh lý)", f"{(df['MÃ_MÁY'].value_counts() >= 4).sum()}")
+    # Thiết bị đỏ (Toàn hệ thống)
+    bad_assets = (df['MÃ_MÁY'].value_counts() >= 4).sum()
+    col_kpi3.metric("Máy nguy kịch (Đỏ)", f"{bad_assets} máy")
 
     st.divider()
 
-    # CHATBOT AI TRUY LỤC (QUÉT TOÀN BỘ DATA)
-    st.subheader("💬 Trợ lý Tra cứu Hồ sơ bệnh án")
-    user_msg = st.text_input("Nhập mã máy (Ví dụ: 3534):", placeholder="Gõ số máy vào đây...")
-    if user_msg:
-        import re
-        m = re.search(r'\d+', user_msg)
-        if m:
-            code = m.group()
-            h = df[df['MÃ_MÁY'] == code].sort_values('NGAY_FIX', ascending=False)
-            if not h.empty:
-                st.info(f"🔍 Tìm thấy {len(h)} lần sửa cho máy {code}:")
-                st.table(h[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']])
-            else: st.error("❌ Không tìm thấy dữ liệu máy này.")
+    # 2. TRỢ LÝ AI (TRA CỨU TOÀN DIỆN)
+    st.subheader("💬 Trợ lý Tra cứu Hồ sơ Bệnh án")
+    with st.container():
+        user_msg = st.text_input("Gõ mã máy để AI truy lục lịch sử (VD: 3534):", placeholder="Mã máy...")
+        if user_msg:
+            import re
+            m = re.search(r'\d+', user_msg)
+            if m:
+                code = m.group()
+                history = df[df['MÃ_MÁY'] == code].sort_values('NGAY_FIX', ascending=False)
+                if not history.empty:
+                    st.info(f"🔍 Kết quả cho máy **{code}**: {len(history)} lần ghi nhận.")
+                    st.dataframe(history[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']], use_container_width=True)
+                else:
+                    st.error(f"❌ Không tìm thấy mã máy {code} trong hệ thống.")
 
     st.divider()
 
-    # BIỂU ĐỒ
+    # 3. BIỂU ĐỒ PHÂN TÍCH
     col_l, col_r = st.columns(2)
     with col_l:
         st.subheader("📍 Tỷ lệ hỏng theo Vùng")
-        st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.5, color_discrete_sequence=px.colors.qualitative.Set3), use_container_width=True)
+        if not df_filtered.empty:
+            st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.5, color_discrete_sequence=px.colors.qualitative.Pastel), use_container_width=True)
     with col_r:
         st.subheader("🛠️ Top 10 lỗi phổ biến nhất")
-        st.plotly_chart(px.bar(df_filtered['LÝ_DO_HỎNG'].value_counts().head(10), orientation='h', color_discrete_sequence=['#1E3A8A']), use_container_width=True)
+        if not df_filtered.empty:
+            st.plotly_chart(px.bar(df_filtered['LÝ_DO_HỎNG'].value_counts().head(10), orientation='h', color_discrete_sequence=['#1E3A8A']), use_container_width=True)
 
-    # DANH SÁCH SỨC KHỎE
-    st.subheader("🌡️ Theo dõi Sức khỏe Hệ thống")
+    # 4. DANH SÁCH SỨC KHỎE
+    st.subheader("🌡️ Chỉ số sức khỏe thiết bị (Health Score)")
     health = df['MÃ_MÁY'].value_counts().reset_index()
     health.columns = ['Mã Máy', 'Lượt hỏng']
     health['Trạng thái'] = health['Lượt hỏng'].apply(lambda x: "🔴 Nguy kịch" if x>=4 else ("🟠 Yếu" if x==3 else "🟢 Tốt"))
     st.dataframe(health.head(20), use_container_width=True)
 
-with
+with tab2:
+    st.markdown("""
+    <div class="guide-box">
+        <h3>📖 HƯỚNG DẪN VẬN HÀNH CHO NHÂN VIÊN</h3>
+        <ul>
+            <li><b>1. Nhập liệu chuẩn:</b> Nhập đúng số máy (Cột A) và lý do (Cột D) trên Google Sheets.</li>
+            <li><b>2. Tra cứu nhanh:</b> Luôn dùng Trợ lý AI để kiểm tra trước khi cấp phát linh kiện mới.</li>
+            <li><b>3. Quản lý vùng:</b> Sử dụng bộ lọc Sidebar bên trái để xem dữ liệu theo chi nhánh/miền.</li>
+            <li><b>4. Xuất báo cáo:</b> Dùng nút "Tải Báo Cáo" ở Sidebar hoặc nhấn <b>Ctrl + P</b> để lưu Dashboard sang PDF.</li>
+        </ul>
+        <p><i>Hệ thống được vận hành bởi AI Expert v5.1</i></p>
+    </div>
+    """, unsafe_allow_html=True)
