@@ -185,3 +185,34 @@ if not df_mystery.empty:
         """)
 else:
     st.success("✅ Tuyệt vời sếp ơi! Hiện chưa ghi nhận máy nào có lỗi 'bí ẩn' trong kỳ này.")
+# --- TÍNH NĂNG CHẤM ĐIỂM SỨC KHỎE THIẾT BỊ ---
+st.divider()
+st.header("🌡️ Asset Health Monitor (Chấm điểm sức khỏe)")
+
+def calculate_health(row_count):
+    if row_count >= 4: return "🔴 Nguy kịch (Dưới 30đ)", "Thanh lý ngay"
+    if row_count == 3: return "🟠 Yếu (50đ)", "Cần bảo trì tổng thể"
+    if row_count == 2: return "🟡 Tạm ổn (75đ)", "Theo dõi thêm"
+    return "🟢 Tốt (95đ)", "Vận hành bình thường"
+
+# Lấy danh sách máy và tính điểm
+health_df = df['MÃ_MÁY'].value_counts().reset_index()
+health_df.columns = ['Mã Máy', 'Lượt hỏng']
+health_df[['Trạng thái', 'Khuyến nghị']] = health_df['Lượt hỏng'].apply(lambda x: pd.Series(calculate_health(x)))
+
+# Hiển thị Top máy cần chú ý nhất
+st.write("📋 **Danh sách thiết bị cần ưu tiên xử lý:**")
+st.dataframe(health_df.head(10).style.applymap(
+    lambda x: 'color: red; font-weight: bold' if 'Nguy kịch' in str(x) else '', subset=['Trạng thái']
+), use_container_width=True)
+
+# --- BIỂU ĐỒ DỰ BÁO TÀI CHÍNH (GIẢ LẬP) ---
+st.subheader("💰 Ước tính ngân sách linh kiện (Dựa trên dự báo AI)")
+# Giả sử giá trung bình linh kiện là 500k
+avg_cost = 500000 
+forecast_data['Chi phí dự kiến (VNĐ)'] = forecast_data['Dự báo cần mua'] * avg_cost
+
+fig_cost = px.pie(forecast_data, values='Chi phí dự kiến (VNĐ)', names='Linh kiện', 
+                 title="Phân bổ ngân sách dự phòng tháng tới",
+                 color_discrete_sequence=px.colors.sequential.RdBu)
+st.plotly_chart(fig_cost, use_container_width=True)
