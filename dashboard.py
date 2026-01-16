@@ -15,7 +15,7 @@ def load_data_full():
         df = pd.read_csv(URL, header=1)
         df.columns = [str(c).strip().upper() for c in df.columns]
         
-        # Mapping cột (Tương thích với tên cột trong hình sếp gửi)
+        # Mapping cột linh hoạt
         mapping = {
             'MÃ SỐ MÁY': next((c for c in df.columns if "MÁY" in c), None),
             'KHU VỰC': next((c for c in df.columns if "KHU VỰC" in c or "CHI NHÁNH" in c), None),
@@ -25,17 +25,27 @@ def load_data_full():
         }
 
         if mapping['MÃ SỐ MÁY']:
+            # Làm sạch dữ liệu: Bỏ dòng không có mã máy, lấp đầy ô trống ở Khu vực
             df = df.dropna(subset=[mapping['MÃ SỐ MÁY']])
             df['Mã số máy'] = df[mapping['MÃ SỐ MÁY']].astype(str).str.split('.').str[0].str.strip()
-            df['Khu vực'] = df[mapping['KHU VỰC']] if mapping['KHU VỰC'] else "N/A"
-            df['Tình trạng'] = df[mapping['TÌNH TRẠNG']] if mapping['TÌNH TRẠNG'] else "N/A"
             
-            # Xử lý chi phí (ép về kiểu số)
+            # Xử lý Khu vực: Chuyển về chuỗi và thay thế NaN bằng "Chưa phân loại"
+            df['Khu vực'] = df[mapping['KHU VỰC']].astype(str).replace(['nan', 'None', ''], 'Chưa phân loại') if mapping['KHU VỰC'] else "N/A"
+            df['Tình trạng'] = df[mapping['TÌNH TRẠNG']].astype(str).replace(['nan', 'None', ''], 'N/A') if mapping['TÌNH TRẠNG'] else "N/A"
+            
+            # Xử lý chi phí
             for col in [mapping['SỬA NỘI BỘ'], mapping['SỬA BÊN NGOÀI']]:
                 if col:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-            df['Tổng chi phí'] = df[mapping['SỬA NỘI BỘ']] + df[mapping['SỬA BÊN NGOÀI']]
+            # Tính tổng chi phí
+            col_noi_bo = mapping['SỬA NỘI BỘ'] if mapping['SỬA NỘI BỘ'] else None
+            col_ngoai = mapping['SỬA BÊN NGOÀI'] if mapping['SỬA BÊN NGOÀI'] else None
+            
+            df['Tổng chi phí'] = 0
+            if col_noi_bo: df['Tổng chi phí'] += df[col_noi_bo]
+            if col_ngoai: df['Tổng chi phí'] += df[col_ngoai]
+            
             return df
         return pd.DataFrame()
     except Exception as e:
@@ -47,9 +57,12 @@ df_raw = load_data_full()
 # --- SIDEBAR: BỘ LỌC ---
 st.sidebar.header("🔍 BỘ LỌC DỮ LIỆU")
 if not df_raw.empty:
-    all_areas = ["Tất cả"] + sorted(df_raw['Khu vực'].unique().tolist())
-    selected_area = st.sidebar.selectbox("Chọn Khu vực", all_areas)
+    # SỬA LỖI TẠI ĐÂY: Chuyển hết sang string trước khi sorted để tránh lỗi TypeError
+    raw_areas = df_raw['Khu vực'].unique().tolist()
+    clean_areas = sorted([str(area) for area in raw_areas if area is not None])
+    all_areas = ["Tất cả"] + clean_areas
     
+    selected_area = st.sidebar.selectbox("Chọn Khu vực", all_areas)
     search_id = st.sidebar.text_input("Tìm Mã số máy (VD: 355)")
 
     # Áp dụng lọc
@@ -66,23 +79,22 @@ if not df_raw.empty:
     # 1. Thống kê nhanh (KPIs)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Tổng lượt lỗi", len(df))
-    c2.metric("Tổng chi phí", f"{df['Tổng chi phí'].sum():,.0f}")
+    c2.metric("Tổng chi phí", f"{df['Tổng chi phí'].sum():,.0f} VNĐ")
     
     counts = df['Mã số máy'].value_counts()
     bad_devices = counts[counts >= 2]
-    c3.metric("Máy hỏng ≥ 2 lần", len(bad_devices), delta="Cảnh báo thanh lý", delta_color="inverse")
-    c4.metric("Khu vực đang lọc", selected_area)
+    c3.metric("Máy hỏng ≥ 2 lần", len(bad_devices))
+    c4.metric("Khu vực đang xem", selected_area)
 
     st.divider()
 
-    # 2. Phân tích chi phí & Xu hướng
+    # 2. Biểu đồ
     col_left, col_right = st.columns(2)
-    
     with col_left:
         st.subheader("💰 Chi phí theo Khu vực")
         cost_chart = df.groupby('Khu vực')['Tổng chi phí'].sum().reset_index()
-        cost_chart.columns = ['Khu vực', 'VNĐ']
-        fig_cost = px.bar(cost_chart, x='Khu vực', y='VNĐ', color='Khu vực', text_auto='.2s')
+        cost_chart.columns = ['Khu vực', 'Số tiền']
+        fig_cost = px.bar(cost_chart, x='Khu vực', y='Số tiền', color='Khu vực', text_auto='.2s')
         st.plotly_chart(fig_cost, use_container_width=True)
 
     with col_right:
@@ -92,13 +104,10 @@ if not df_raw.empty:
         fig_pie = px.pie(reason_chart, names='Lý do', values='Số lượng', hole=0.4)
         st.plotly_chart(fig_pie, use_container_width=True)
 
-    # 3. AI Phân tích: Danh sách máy "Đen"
-    st.subheader("🚨 DANH SÁCH MÁY CÓ NGUY CƠ CAO (BLACKLIST)")
+    # 3. Danh sách máy "Đen" (Cảnh báo thanh lý)
     if not bad_devices.empty:
-        # Lấy thông tin chi tiết của các máy hỏng nhiều lần
+        st.subheader("🚨 DANH SÁCH MÁY CẦN THEO DÕI ĐẶC BIỆT")
         df_blacklist = df[df['Mã số máy'].isin(bad_devices.index)].copy()
-        
-        # Tính tổng tiền đã cúng cho mỗi máy
         summary_bad = df_blacklist.groupby('Mã số máy').agg({
             'Khu vực': 'first',
             'Tình trạng': lambda x: ' | '.join(x.unique()),
@@ -106,14 +115,10 @@ if not df_raw.empty:
             'Mã số máy': 'count'
         }).rename(columns={'Mã số máy': 'Số lần hỏng'}).reset_index()
         
-        st.table(summary_bad.sort_values('Số lần hỏng', ascending=False))
-        st.info("💡 Lời khuyên: Các máy có số lần hỏng > 3 hoặc chi phí sửa chữa vượt 50% giá trị máy nên được xem xét thanh lý.")
-    else:
-        st.success("Chưa phát hiện máy nào hỏng lặp lại trong bộ lọc này.")
-
+        st.dataframe(summary_bad.sort_values('Số lần hỏng', ascending=False), use_container_width=True)
+    
     # 4. Bảng dữ liệu thô
     with st.expander("🔍 Xem toàn bộ Nhật ký chi tiết"):
         st.dataframe(df, use_container_width=True)
-
 else:
-    st.warning("Đang kết nối dữ liệu...")
+    st.info("Đang chờ dữ liệu từ Google Sheets...")
