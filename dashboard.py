@@ -4,78 +4,75 @@ import plotly.express as px
 
 st.set_page_config(page_title="Hệ thống Quản lý Laptop Pro", layout="wide")
 
+# Link ID gốc của sếp
 SHEET_ID = "16eiLNG46MCmS5GeETnotXW5GyNtvKNYBh_7Zk7IJRfA"
-# Đọc trực tiếp định dạng thô nhất để tránh lỗi định dạng của Google
-URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
+# Link xuất dữ liệu sạch nhất, không kèm tham số phụ để tránh lỗi 400
+URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
-@st.cache_data(ttl=1) # Tốc độ cập nhật cực nhanh
-def load_data_v5_final():
+@st.cache_data(ttl=2)
+def load_data_final_fix():
     try:
-        # Đọc dữ liệu từ dòng chứa tiêu đề
+        # Đọc dữ liệu từ dòng 2 (Bỏ qua dòng gộp ô đầu tiên)
         df = pd.read_csv(URL, header=1)
         
-        # 1. Dọn dẹp tên cột
+        # Làm sạch tên cột
         df.columns = [str(c).strip().upper() for c in df.columns]
-
-        # 2. Tìm đúng cột "Chi Nhánh" (Cột F)
+        
+        # Tìm cột Chi Nhánh bằng cách quét từ khóa hoặc lấy cột thứ 6 (Cột F)
         col_kv = next((c for c in df.columns if any(k in c for k in ["CHI NHÁNH", "KHU VỰC", "CHI NHANH"])), df.columns[5])
         col_ma = next((c for c in df.columns if "MÁY" in c or "MASOMAY" in c), df.columns[1])
-
-        # 3. Thuật toán nhận diện Miền Nam thông minh
-        def super_detect(val):
-            v = str(val).strip().upper()
-            # Nếu sếp tô màu xanh mà chưa có chữ, hoặc có mã ẩn, ta quét theo từ khóa
-            if any(x in v for x in ["NAM", "MN", "SOUTH"]): return "Miền Nam"
-            if any(x in v for x in ["BẮC", "MB", "NORTH"]): return "Miền Bắc"
-            if any(x in v for x in ["TRUNG", "ĐN", "DN", "CENTER"]): return "Miền Trung"
-            return "Chưa phân loại"
-
-        df['Khu Vực'] = df[col_kv].apply(super_detect)
-        df['Mã máy'] = df[col_ma].astype(str).str.split('.').str[0]
         
-        # Lọc bỏ các dòng không có mã máy (dòng trống)
-        df = df[df['Mã máy'] != 'nan']
+        # Chuẩn hóa dữ liệu vùng miền (Dành cho Miền Nam, Miền Bắc, Đà Nẵng)
+        def fix_region(val):
+            v = str(val).strip().upper()
+            if any(x in v for x in ['NAM', 'MN', 'SOUTH']): return 'Miền Nam'
+            if any(x in v for x in ['BẮC', 'MB', 'NORTH']): return 'Miền Bắc'
+            if any(x in v for x in ['TRUNG', 'ĐN', 'DN', 'ĐÀ NẴNG']): return 'Miền Trung'
+            return 'Khác/Chưa nhập'
+
+        df['Khu vực'] = df[col_kv].apply(fix_region)
+        df['Mã máy'] = df[col_ma].astype(str).str.split('.').str[0]
         
         return df, col_kv
     except Exception as e:
-        st.error(f"Lỗi hệ thống: {e}")
+        st.error(f"⚠️ Đang thử kết nối lại... ({e})")
         return pd.DataFrame(), None
 
-df, found_col = load_data_v5_final()
+df, real_col = load_data_final_fix()
 
 st.title("🛡️ Dashboard Quản trị Thiết bị Pro")
 
 if not df.empty:
-    # Sidebar lọc
-    vung_list = ["Miền Bắc", "Miền Trung", "Miền Nam", "Chưa phân loại"]
-    selected = st.sidebar.multiselect("📍 Chọn Miền", vung_list, default=[v for v in vung_list if v in df['Khu Vực'].unique()])
+    # Sidebar
+    regions = ["Miền Bắc", "Miền Trung", "Miền Nam", "Khác/Chưa nhập"]
+    selected = st.sidebar.multiselect("📍 Chọn Miền", regions, default=[r for r in regions if r in df['Khu vực'].unique()])
     
-    df_filtered = df[df['Khu Vực'].isin(selected)]
+    df_filtered = df[df['Khu vực'].isin(selected)]
 
     # KPIs
     c1, c2, c3 = st.columns(3)
     c1.metric("Tổng lượt lỗi", len(df_filtered))
     c2.metric("Số máy khác nhau", df_filtered['Mã máy'].nunique())
     
-    # Kiểm đếm riêng Miền Nam
-    val_mn = len(df[df['Khu Vực'] == 'Miền Nam'])
-    c3.metric("Dữ liệu Miền Nam", val_mn, delta="Đã nhận diện" if val_mn > 0 else "Kiểm tra ô màu xanh!")
+    # Kiểm tra riêng Miền Nam
+    num_nam = len(df[df['Khu vực'] == 'Miền Nam'])
+    c3.metric("Dữ liệu Miền Nam", num_nam, delta="Đã nhận diện" if num_nam > 0 else "Kiểm tra ô màu xanh!")
 
     st.divider()
 
     # Biểu đồ
-    chart_df = df_filtered['Khu Vực'].value_counts().reset_index()
-    chart_df.columns = ['Vùng', 'Số ca']
-    fig = px.bar(chart_df, x='Vùng', y='Số ca', color='Vùng', text_auto=True,
-                 color_discrete_map={"Miền Bắc": "#007bff", "Miền Trung": "#ffc107", "Miền Nam": "#28a745", "Chưa phân loại": "#6c757d"})
-    st.plotly_chart(fig, use_container_width=True)
+    if not df_filtered.empty:
+        chart_data = df_filtered['Khu vực'].value_counts().reset_index()
+        chart_data.columns = ['Vùng', 'Số lượng']
+        fig = px.bar(chart_data, x='Vùng', y='Số lượng', color='Vùng', text_auto=True,
+                     color_discrete_map={"Miền Bắc": "#007bff", "Miền Trung": "#ffc107", "Miền Nam": "#28a745", "Khác/Chưa nhập": "#6c757d"})
+        st.plotly_chart(fig, use_container_width=True)
 
-    # PHẦN KIỂM TRA CHO SẾP (Quan trọng nhất)
-    with st.expander("🔍 Soi dữ liệu thô (Dành cho sếp)"):
-        st.write(f"Đang đọc dữ liệu từ cột: **{found_col}**")
-        st.write("Dưới đây là 30 dòng mà App đang liệt vào nhóm 'Chưa phân loại'. Sếp xem chúng có chữ gì nhé:")
-        df_khac = df[df['Khu Vực'] == 'Chưa phân loại'].tail(30)
-        st.dataframe(df_khac[[found_col, 'Khu Vực']])
+    # PHẦN QUAN TRỌNG NHẤT: TRÌNH SOI DỮ LIỆU
+    with st.expander("🔍 Soi dữ liệu thực tế (Dành cho sếp)"):
+        st.write(f"App đang đọc dữ liệu từ cột: **{real_col}**")
+        st.write("Dữ liệu 20 dòng cuối cùng (Nơi thường có Miền Nam):")
+        st.dataframe(df[[real_col, 'Khu vực']].tail(20))
 
 else:
-    st.info("Sếp kiểm tra lại cột 'Chi Nhánh' trong file Sheets nhé!")
+    st.info("Sếp hãy kiểm tra lại quyền chia sẻ Link Google Sheets (Bất kỳ ai có link đều xem được).")
