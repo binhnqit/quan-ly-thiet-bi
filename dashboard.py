@@ -6,119 +6,82 @@ st.set_page_config(page_title="Hệ thống Quản trị Thiết bị Pro", layo
 
 # Link ID từ Google Sheets
 SHEET_ID = "16eiLNG46MCmS5GeETnotXW5GyNtvKNYBh_7Zk7IJRfA"
-URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
+# Thêm tham số range=A1:Z1000 để ép Google trả về toàn bộ dữ liệu 3 miền
+URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&range=A1:Z1000"
 
-@st.cache_data(ttl=60)
-def load_data_full():
+@st.cache_data(ttl=30)
+def load_data_triple_regions():
     try:
         # Đọc dữ liệu (bỏ qua dòng tiêu đề gộp ô đầu tiên)
         df = pd.read_csv(URL, header=1)
         df.columns = [str(c).strip().upper() for c in df.columns]
         
-        # Mapping cột linh hoạt
-        mapping = {
-            'MÃ SỐ MÁY': next((c for c in df.columns if "MÁY" in c), None),
-            'KHU VỰC': next((c for c in df.columns if "KHU VỰC" in c or "CHI NHÁNH" in c), None),
-            'TÌNH TRẠNG': next((c for c in df.columns if "TRẠNG" in c or "KIỂM TRA" in c), None),
-            'SỬA NỘI BỘ': next((c for c in df.columns if "NỘI BỘ" in c), None),
-            'SỬA BÊN NGOÀI': next((c for c in df.columns if "NGOÀI" in c), None)
-        }
+        # Mapping cột linh hoạt theo dữ liệu thực tế của sếp
+        col_ma_may = next((c for c in df.columns if "MÁY" in c), None)
+        col_chi_nhanh = next((c for c in df.columns if "CHI NHÁNH" in c or "KHU VỰC" in c), None)
+        col_tinh_trang = next((c for c in df.columns if "TRẠNG" in c or "LÝ DO" in c), None)
+        col_phi_nb = next((c for c in df.columns if "NỘI BỘ" in c), None)
+        col_phi_ngoai = next((c for c in df.columns if "NGOÀI" in c), None)
 
-        if mapping['MÃ SỐ MÁY']:
-            # Làm sạch dữ liệu: Bỏ dòng không có mã máy, lấp đầy ô trống ở Khu vực
-            df = df.dropna(subset=[mapping['MÃ SỐ MÁY']])
-            df['Mã số máy'] = df[mapping['MÃ SỐ MÁY']].astype(str).str.split('.').str[0].str.strip()
+        if col_ma_may:
+            # Chỉ lấy những dòng thực sự có Mã số máy
+            df = df.dropna(subset=[col_ma_may])
+            df['Mã số máy'] = df[col_ma_may].astype(str).str.split('.').str[0].str.strip()
             
-            # Xử lý Khu vực: Chuyển về chuỗi và thay thế NaN bằng "Chưa phân loại"
-            df['Khu vực'] = df[mapping['KHU VỰC']].astype(str).replace(['nan', 'None', ''], 'Chưa phân loại') if mapping['KHU VỰC'] else "N/A"
-            df['Tình trạng'] = df[mapping['TÌNH TRẠNG']].astype(str).replace(['nan', 'None', ''], 'N/A') if mapping['TÌNH TRẠNG'] else "N/A"
+            # Xử lý Chi Nhánh (Đảm bảo lấy đủ Miền Nam, Miền Trung, Miền Bắc)
+            df['Chi Nhánh'] = df[col_chi_nhanh].astype(str).str.strip() if col_chi_nhanh else "Chưa phân loại"
+            # Loại bỏ các giá trị rác hoặc dòng trống bị hiểu nhầm là chuỗi 'nan'
+            df = df[~df['Chi Nhánh'].isin(['nan', 'None', ''])]
             
             # Xử lý chi phí
-            for col in [mapping['SỬA NỘI BỘ'], mapping['SỬA BÊN NGOÀI']]:
-                if col:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            
-            # Tính tổng chi phí
-            col_noi_bo = mapping['SỬA NỘI BỘ'] if mapping['SỬA NỘI BỘ'] else None
-            col_ngoai = mapping['SỬA BÊN NGOÀI'] if mapping['SỬA BÊN NGOÀI'] else None
-            
             df['Tổng chi phí'] = 0
-            if col_noi_bo: df['Tổng chi phí'] += df[col_noi_bo]
-            if col_ngoai: df['Tổng chi phí'] += df[col_ngoai]
+            for c in [col_phi_nb, col_phi_ngoai]:
+                if c:
+                    df['Tổng chi phí'] += pd.to_numeric(df[c], errors='coerce').fillna(0)
             
             return df
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"Lỗi tải dữ liệu: {e}")
+        st.error(f"Lỗi hệ thống: {e}")
         return pd.DataFrame()
 
-df_raw = load_data_full()
+df = load_data_triple_regions()
 
-# --- SIDEBAR: BỘ LỌC ---
-st.sidebar.header("🔍 BỘ LỌC DỮ LIỆU")
-if not df_raw.empty:
-    # SỬA LỖI TẠI ĐÂY: Chuyển hết sang string trước khi sorted để tránh lỗi TypeError
-    raw_areas = df_raw['Khu vực'].unique().tolist()
-    clean_areas = sorted([str(area) for area in raw_areas if area is not None])
-    all_areas = ["Tất cả"] + clean_areas
+# --- GIAO DIỆN ---
+st.title("🛡️ Dashboard Quản trị Thiết bị 3 Miền")
+
+if not df.empty:
+    # Sidebar lọc nhanh
+    selected_region = st.sidebar.multiselect("📍 Lọc theo Miền", 
+                                            options=sorted(df['Chi Nhánh'].unique()),
+                                            default=sorted(df['Chi Nhánh'].unique()))
     
-    selected_area = st.sidebar.selectbox("Chọn Khu vực", all_areas)
-    search_id = st.sidebar.text_input("Tìm Mã số máy (VD: 355)")
+    df_filtered = df[df['Chi Nhánh'].isin(selected_region)]
 
-    # Áp dụng lọc
-    df = df_raw.copy()
-    if selected_area != "Tất cả":
-        df = df[df['Khu vực'] == selected_area]
-    if search_id:
-        df = df[df['Mã số máy'].str.contains(search_id)]
-
-# --- GIAO DIỆN CHÍNH ---
-st.title("🛡️ Dashboard Quản trị Thiết bị Pro")
-
-if not df_raw.empty:
-    # 1. Thống kê nhanh (KPIs)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tổng lượt lỗi", len(df))
-    c2.metric("Tổng chi phí", f"{df['Tổng chi phí'].sum():,.0f} VNĐ")
-    
-    counts = df['Mã số máy'].value_counts()
-    bad_devices = counts[counts >= 2]
-    c3.metric("Máy hỏng ≥ 2 lần", len(bad_devices))
-    c4.metric("Khu vực đang xem", selected_area)
+    # KPIs
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Tổng lượt lỗi", len(df_filtered))
+    c2.metric("Tổng chi phí (VNĐ)", f"{df_filtered['Tổng chi phí'].sum():,.0f}")
+    c3.metric("Số lượng máy hỏng", df_filtered['Mã số máy'].nunique())
 
     st.divider()
 
-    # 2. Biểu đồ
-    col_left, col_right = st.columns(2)
-    with col_left:
-        st.subheader("💰 Chi phí theo Khu vực")
-        cost_chart = df.groupby('Khu vực')['Tổng chi phí'].sum().reset_index()
-        cost_chart.columns = ['Khu vực', 'Số tiền']
-        fig_cost = px.bar(cost_chart, x='Khu vực', y='Số tiền', color='Khu vực', text_auto='.2s')
-        st.plotly_chart(fig_cost, use_container_width=True)
-
-    with col_right:
-        st.subheader("🧩 Cơ cấu loại hư hỏng")
-        reason_chart = df['Tình trạng'].value_counts().reset_index()
-        reason_chart.columns = ['Lý do', 'Số lượng']
-        fig_pie = px.pie(reason_chart, names='Lý do', values='Số lượng', hole=0.4)
-        st.plotly_chart(fig_pie, use_container_width=True)
-
-    # 3. Danh sách máy "Đen" (Cảnh báo thanh lý)
-    if not bad_devices.empty:
-        st.subheader("🚨 DANH SÁCH MÁY CẦN THEO DÕI ĐẶC BIỆT")
-        df_blacklist = df[df['Mã số máy'].isin(bad_devices.index)].copy()
-        summary_bad = df_blacklist.groupby('Mã số máy').agg({
-            'Khu vực': 'first',
-            'Tình trạng': lambda x: ' | '.join(x.unique()),
-            'Tổng chi phí': 'sum',
-            'Mã số máy': 'count'
-        }).rename(columns={'Mã số máy': 'Số lần hỏng'}).reset_index()
-        
-        st.dataframe(summary_bad.sort_values('Số lần hỏng', ascending=False), use_container_width=True)
+    # Biểu đồ 3 Miền
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.subheader("📊 Số ca lỗi theo Chi nhánh")
+        fig_bar = px.bar(df_filtered['Chi Nhánh'].value_counts().reset_index(), 
+                         x='index', y='Chi Nhánh', color='index', text_auto=True,
+                         labels={'index': 'Chi Nhánh', 'Chi Nhánh': 'Số ca'})
+        st.plotly_chart(fig_bar, use_container_width=True)
     
-    # 4. Bảng dữ liệu thô
-    with st.expander("🔍 Xem toàn bộ Nhật ký chi tiết"):
-        st.dataframe(df, use_container_width=True)
+    with col_b:
+        st.subheader("📋 Danh sách máy Miền Nam mới nhất")
+        df_south = df_filtered[df_filtered['Chi Nhánh'].str.contains("Nam")]
+        st.dataframe(df_south[['Mã số máy', 'Chi Nhánh', 'Tổng chi phí']].head(10), use_container_width=True)
+
+    # Bảng tổng hợp
+    with st.expander("🔍 Xem chi tiết toàn bộ dữ liệu"):
+        st.dataframe(df_filtered, use_container_width=True)
 else:
-    st.info("Đang chờ dữ liệu từ Google Sheets...")
+    st.warning("Đang quét dữ liệu... Sếp đợi chút nhé!")
