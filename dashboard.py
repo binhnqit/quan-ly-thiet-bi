@@ -1,70 +1,59 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import time
 
 st.set_page_config(page_title="Hệ thống Quản lý Laptop Pro", layout="wide")
 
-# Link ID từ hình của sếp
+# Link ID lấy trực tiếp từ hình của sếp
 SHEET_ID = "16eiLNG46MCmS5GeETnotXW5GyNtvKNYBh_7Zk7IJRfA"
-# Dùng link này để Google ép xuất dữ liệu mới nhất
-URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0&refresh={time.time()}"
+# Dùng link export cơ bản nhất để tránh lỗi 400 Bad Request
+URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
-def load_data_ultra():
+def load_data_stable():
     try:
-        # Đọc dữ liệu thô, không quan tâm tiêu đề là gì
+        # Đọc dữ liệu từ Google Sheets
         df = pd.read_csv(URL)
         
-        # ÉP TÊN CỘT MỚI (Dựa theo thứ tự hình image_f93aaa.png của sếp)
-        # Cách này giúp app không bao giờ bị báo "Không tìm thấy cột"
-        new_columns = ['STT', 'Ma_So_May', 'Ten_KH', 'Ly_Do', 'Du_Doan', 'Chi_Nhanh', 'Ngay', 'Nguoi_Kiem', 'Phi_Du_Kien', 'Phi_Thuc_Te']
+        # Làm sạch tên cột (Xóa khoảng trắng)
+        df.columns = [str(c).strip() for c in df.columns]
         
-        # Chỉ lấy số lượng cột tương ứng để tránh lỗi nếu sếp thêm cột
-        df.columns = new_columns[:len(df.columns)]
-        
-        # Làm sạch: Loại bỏ dòng tiêu đề nếu bị lặp lại và dòng trống
-        df = df[df['Ma_So_May'].notna()]
-        df = df[df['Ma_So_May'] != 'Mã số máy']
-        
-        # Chuẩn hóa mã máy
-        df['Ma_So_May'] = df['Ma_So_May'].astype(str).str.split('.').str[0].str.strip()
-        
-        # Chuyển chi phí sang số
-        df['Phi_Thuc_Te'] = pd.to_numeric(df['Phi_Thuc_Te'], errors='coerce').fillna(0)
-        
-        return df
+        # Kiểm tra cột Masomay (tên mới sếp vừa đặt)
+        if "Masomay" in df.columns:
+            df = df.dropna(subset=["Masomay"])
+            # Chuẩn hóa mã máy
+            df["Masomay"] = df["Masomay"].astype(str).str.split('.').str[0]
+            return df
+        else:
+            # Nếu không tìm thấy Masomay, hiển thị các cột đang có để sếp biết
+            st.warning(f"Cột tìm thấy: {list(df.columns)}")
+            return pd.DataFrame()
     except Exception as e:
-        st.error(f"Đang kết nối lại với máy chủ Google... (Lỗi: {e})")
+        st.error(f"⚠️ Lỗi kết nối: {e}")
         return pd.DataFrame()
 
-df = load_data_ultra()
+df = load_data_stable()
 
 st.title("🛡️ Dashboard Quản trị Thiết bị Pro")
 
 if not df.empty:
-    st.success("✅ ĐÃ KẾT NỐI TRỰC TIẾP THÀNH CÔNG!")
+    st.success("✅ Kết nối thành công!")
     
-    # Chỉ số Metrics
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Tổng lượt lỗi", len(df))
-    m2.metric("Tổng chi phí", f"{df['Phi_Thuc_Te'].sum():,.0f} VNĐ")
+    # Dashboard số liệu
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Tổng lượt báo lỗi", len(df))
     
-    counts = df['Ma_So_May'].value_counts()
-    m3.metric("Máy hỏng ≥ 2 lần", len(counts[counts >= 2]))
-
-    st.divider()
-
-    # Biểu đồ và Bảng
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.subheader("🌎 Lỗi theo Chi nhánh")
-        fig = px.bar(df['Chi_Nhanh'].value_counts().reset_index(), x='index', y='Chi_Nhanh', text_auto=True)
+    # Biểu đồ Chi nhánh (Cột F trong hình của sếp)
+    if "Chi Nhánh" in df.columns:
+        st.subheader("🌎 Thống kê theo Chi nhánh")
+        fig = px.bar(df["Chi Nhánh"].value_counts().reset_index(), 
+                     x='index', y='Chi Nhánh', text_auto=True,
+                     labels={'index': 'Chi nhánh', 'Chi Nhánh': 'Số ca'})
         st.plotly_chart(fig, use_container_width=True)
-        
-    with col2:
-        st.subheader("📋 Danh sách dữ liệu")
-        st.dataframe(df, use_container_width=True)
+
+    # Hiển thị bảng dữ liệu chính
+    st.subheader("📋 Chi tiết nhật ký thiết bị")
+    st.dataframe(df, use_container_width=True)
 else:
-    st.info("Sếp đợi vài giây để dữ liệu từ Google Sheets đổ về Dashboard...")
-    if st.button('Ép tải lại ngay'):
+    st.info("Sếp hãy kiểm tra lại quyền chia sẻ file Google Sheets nhé.")
+    if st.button('Tải lại dữ liệu'):
         st.rerun()
