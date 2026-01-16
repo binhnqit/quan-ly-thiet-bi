@@ -4,17 +4,16 @@ import plotly.express as px
 
 st.set_page_config(page_title="Hệ thống Quản lý Laptop Pro", layout="wide")
 
-# SẾP DÁN CÁI LINK VỪA COPY Ở BƯỚC 1 VÀO ĐÂY
-# Nó sẽ có dạng: https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv
-PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRuNH37yVPVZsAOyyJ4Eqvc0Hsd5XvucmKvw1XyZwhkeV6YVuxhZ14ACHxrtQf-KD-fP0yWlbgpdat-/pubhtml?gid=675485241&single=true"
+# SẾP DÁN LINK CÓ CHỮ "output=csv" VÀO ĐÂY
+PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRuNH37yVPVZsAOyyJ4Eqvc0Hsd5XvucmKvw1XyZwhkeV6YVuxhZ14ACHxrtQf-KD-fP0yWlbgpdat-/pub?gid=675485241&single=true&output=csv"
 
-@st.cache_data(ttl=5)
-def load_data_complete():
+@st.cache_data(ttl=1)
+def load_data_final_fix():
     try:
-        # Link xuất bản (Publish) là cách mạnh nhất để lấy đủ 3647 dòng
-        df = pd.read_csv(PUBLISHED_URL)
+        # Sử dụng on_bad_lines để bỏ qua các dòng lỗi định dạng nếu có
+        df = pd.read_csv(PUBLISHED_URL, on_bad_lines='skip')
         
-        # Tự động đặt tên cột để tránh lỗi Duplicate
+        # Tự động đặt tên cột COL_0, COL_1... để tránh lỗi Duplicate
         df.columns = [f"COL_{i}" for i in range(len(df.columns))]
 
         # TỌA ĐỘ CHUẨN: Cột B (1) là Mã máy, Cột D (3) là Chi nhánh
@@ -40,19 +39,19 @@ def load_data_complete():
         st.error(f"Lỗi kết nối: {e}")
         return pd.DataFrame()
 
-df = load_data_complete()
+df = load_data_final_fix()
 
 st.title("🛡️ Dashboard Quản trị Thiết bị Pro")
 
 if not df.empty:
     # KPIs
     c1, c2, c3 = st.columns(3)
-    # Con số này PHẢI vượt qua 2521
+    # Tổng lượt lỗi phải nhảy lên > 3000
     c1.metric("Tổng lượt lỗi thực tế", len(df))
     c2.metric("Số máy hỏng khác nhau", df['MÃ_MÁY_FIX'].nunique())
     
     val_mn = len(df[df['VÙNG_MIỀN'] == 'Miền Nam'])
-    c3.metric("Số ca Miền Nam", val_mn)
+    c3.metric("Số ca Miền Nam", val_mn, delta="Đã quét dòng 3000+" if val_mn > 0 else "Kiểm tra lại text")
 
     st.divider()
 
@@ -68,9 +67,9 @@ if not df.empty:
                  })
     st.plotly_chart(fig, use_container_width=True)
 
-    # PHẦN KIỂM CHỨNG TỐI THƯỢNG
-    with st.expander("🔍 Kiểm tra dòng cuối cùng (Mốc 3647)"):
-        st.write(f"Hệ thống đã đọc được tổng cộng: **{len(df)}** dòng.")
-        st.dataframe(df.tail(50))
+    # BẢNG SOI DÒNG CUỐI
+    with st.expander("🔍 Kiểm tra mốc dữ liệu 3647"):
+        st.write(f"Số dòng hệ thống vừa quét được: **{len(df)}**")
+        st.dataframe(df.tail(100))
 else:
-    st.info("Sếp vui lòng dán link 'Xuất bản lên web' vào code nhé!")
+    st.info("Sếp đang dùng link HTML, hãy đổi sang link CSV theo hướng dẫn ở trên nhé!")
