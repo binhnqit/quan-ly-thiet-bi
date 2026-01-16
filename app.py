@@ -4,23 +4,33 @@ import plotly.express as px
 from datetime import datetime
 
 # --- CẤU HÌNH WEB ---
-st.set_page_config(page_title="Hệ thống Quản trị Laptop Cloud", layout="wide")
+st.set_page_config(page_title="Hệ thống Quản lý Laptop Cloud", layout="wide")
 
-# Link Google Sheets của sếp (đã chuyển sang dạng export CSV để đọc nhanh)
-SHEET_ID = "1GaWsUJutV4wixR3RUBZSTIMrgaD8fOIi"
-SHEET_NAME = "LAPTOP%20L%E1%BB%96I%20-%20THAY%20TH%E1%BA%BE" # Tên sheet đã mã hóa URL
-URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
+# Link Google Sheets mới nhất của sếp
+SHEET_ID = "1C8P6TWKTvPmQ1EVJYLqR0AhT6HYvz37s"
+# Tên sheet phải chính xác từng dấu cách
+SHEET_NAME = "LAPTOP LỖI - THAY THẾ" 
 
-@st.cache_data(ttl=300) # Cập nhật dữ liệu mới mỗi 5 phút
+# Chuyển đổi link sang định dạng export CSV chuẩn
+URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=LAPTOP%20L%E1%BB%96I%20-%20THAY%20TH%E1%BA%BE"
+
+@st.cache_data(ttl=60) # Cập nhật mỗi 1 phút cho nóng
 def load_data_from_cloud():
     try:
-        # Đọc dữ liệu từ Google Sheets công khai
-        df = pd.read_csv(URL, header=1)
+        # Đọc dữ liệu, bỏ qua dòng trống đầu tiên nếu có
+        df = pd.read_csv(URL)
         
+        # KIỂM TRA DÒNG TIÊU ĐỀ: Nếu dòng đầu không phải "Mã số máy", ta lấy dòng tiếp theo
+        if "Mã số máy" not in df.columns:
+            df = pd.read_csv(URL, header=1)
+            
         # Làm sạch dữ liệu
         df = df.dropna(subset=["Mã số máy"])
         df["Mã số máy"] = df["Mã số máy"].astype(str).str.strip().str.replace(".0", "", regex=False)
-        df["Ngày Xác nhận"] = pd.to_datetime(df["Ngày Xác nhận"], errors='coerce')
+        
+        # Chuẩn hóa ngày tháng
+        if "Ngày Xác nhận" in df.columns:
+            df["Ngày Xác nhận"] = pd.to_datetime(df["Ngày Xác nhận"], errors='coerce')
         
         # Xử lý chi phí
         for col in ["Chi Phí Dự Kiến", "Chi Phí Thực Tế"]:
@@ -28,46 +38,51 @@ def load_data_from_cloud():
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             else:
                 df[col] = 0
+                
         return df
     except Exception as e:
-        st.error(f"⚠️ Không thể kết nối dữ liệu Cloud: {e}")
+        st.error(f"⚠️ Lỗi kết nối: {e}")
         return pd.DataFrame()
 
 df = load_data_from_cloud()
 
-# --- GIAO DIỆN CHÍNH (Giữ nguyên logic chuyên gia của chúng ta) ---
-st.title("🌐 Hệ thống Quản lý Thiết bị Online")
-st.info("Dữ liệu đang được kết nối trực tiếp với Google Drive của sếp.")
+# --- GIAO DIỆN ---
+st.title("🌐 Hệ thống Quản lý Thiết bị Online (Bản Cloud)")
 
 if not df.empty:
-    # 1. Sidebar Lọc
-    st.sidebar.header("Bộ lọc")
-    mien = st.sidebar.multiselect("Chọn Miền", options=df["Chi Nhánh"].unique(), default=df["Chi Nhánh"].unique())
-    df_filtered = df[df["Chi Nhánh"].isin(mien)]
+    # Hiển thị thông tin kiểm tra để sếp yên tâm
+    with st.expander("✅ Trạng thái kết nối dữ liệu"):
+        st.write(f"Đã đọc thành công {len(df)} dòng dữ liệu từ Google Sheets.")
+        st.write("Danh sách cột nhận diện được:", list(df.columns))
 
-    # 2. Metrics tài chính
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Tổng lượt lỗi", len(df_filtered))
-    c2.metric("Tổng chi phí thực tế", f"{df_filtered['Chi Phí Thực Tế'].sum():,.0f} VNĐ")
+    # --- PHẦN 1: THỐNG KÊ NHANH ---
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Tổng ca lỗi", len(df))
+    m2.metric("Tổng chi phí sửa", f"{df['Chi Phí Thực Tế'].sum():,.0f} VNĐ")
     
-    # 3. Phân tích máy hỏng nhiều (Thanh lý)
-    st.subheader("🚨 Danh sách máy hỏng lặp lại (Cần thanh lý)")
-    counts = df_filtered["Mã số máy"].value_counts()
-    blacklist = counts[counts >= 2].index
-    if not blacklist.empty:
-        df_blacklist = df_filtered[df_filtered["Mã số máy"].isin(blacklist)]
-        st.dataframe(df_blacklist, use_container_width=True)
-    else:
-        st.success("Chưa phát hiện máy nào hỏng lặp lại trong kỳ này.")
+    counts = df["Mã số máy"].value_counts()
+    blacklist_num = len(counts[counts >= 2])
+    m3.metric("Máy hỏng ≥ 2 lần", f"{blacklist_num} máy", delta="Cần thanh lý", delta_color="inverse")
 
-    # 4. Biểu đồ
-    col_a, col_b = st.columns(2)
-    with col_a:
-        fig_mien = px.bar(df_filtered["Chi Nhánh"].value_counts().reset_index(), x='Chi Nhánh', y='count', title="Lỗi theo Miền")
-        st.plotly_chart(fig_mien, use_container_width=True)
-    with col_b:
-        fig_loi = px.pie(df_filtered["Lý Do"].value_counts().reset_index(), values='count', names='Lý Do', title="Cơ cấu loại lỗi", hole=0.4)
-        st.plotly_chart(fig_loi, use_container_width=True)
+    st.divider()
+
+    # --- PHẦN 2: BIỂU ĐỒ ---
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("📍 Lỗi theo Chi nhánh")
+        fig_branch = px.bar(df["Chi Nhánh"].value_counts().reset_index(), 
+                          x='Chi Nhánh', y='count', color='Chi Nhánh', text_auto=True)
+        st.plotly_chart(fig_branch, use_container_width=True)
+    with c2:
+        st.subheader("🧩 Cơ cấu loại lỗi")
+        fig_reason = px.pie(df["Lý Do"].value_counts().reset_index(), 
+                          values='count', names='Lý Do', hole=0.4)
+        st.plotly_chart(fig_reason, use_container_width=True)
+
+    # --- PHẦN 3: DANH SÁCH THANH LÝ ---
+    st.subheader("🚨 Danh sách máy 'Đen' (Hỏng nhiều lần)")
+    df_rep = df[df["Mã số máy"].isin(counts[counts >= 2].index)]
+    st.dataframe(df_rep.sort_values("Mã số máy"), use_container_width=True)
 
 else:
-    st.warning("Đang đợi dữ liệu từ Google Sheets...")
+    st.warning("Đang đợi dữ liệu từ Google Sheets... Sếp kiểm tra lại quyền Chia sẻ (Anyone with link) nhé!")
