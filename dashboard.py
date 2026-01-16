@@ -134,21 +134,7 @@ with tab1:
     health.columns = ['Mã Máy', 'Lượt hỏng']
     health['Trạng thái'] = health['Lượt hỏng'].apply(lambda x: "🔴 Nguy kịch" if x>=4 else ("🟠 Yếu" if x==3 else "🟢 Tốt"))
     st.dataframe(health.head(20), use_container_width=True)
-
-with tab2:
-    st.markdown("""
-    <div class="guide-box">
-        <h3>📖 HƯỚNG DẪN VẬN HÀNH CHO NHÂN VIÊN</h3>
-        <ul>
-            <li><b>1. Nhập liệu chuẩn:</b> Nhập đúng số máy (Cột A) và lý do (Cột D) trên Google Sheets.</li>
-            <li><b>2. Tra cứu nhanh:</b> Luôn dùng Trợ lý AI để kiểm tra trước khi cấp phát linh kiện mới.</li>
-            <li><b>3. Quản lý vùng:</b> Sử dụng bộ lọc Sidebar bên trái để xem dữ liệu theo chi nhánh/miền.</li>
-            <li><b>4. Xuất báo cáo:</b> Dùng nút "Tải Báo Cáo" ở Sidebar hoặc nhấn <b>Ctrl + P</b> để lưu Dashboard sang PDF.</li>
-        </ul>
-        <p><i>Hệ thống được vận hành bởi AI Expert v5.1</i></p>
-    </div>
-    """, unsafe_allow_html=True)
-    # --- PHẦN TỐI ƯU DỰ BÁO CHI PHÍ ---
+  # --- PHẦN TỐI ƯU DỰ BÁO CHI PHÍ ---
     st.divider()
     st.subheader("💰 Kế hoạch Ngân sách & Dự báo Tài chính (Tháng tới)")
     
@@ -197,3 +183,17 @@ with tab2:
             st.plotly_chart(fig_budget, use_container_width=True)
 
     st.divider()
+with tab2:
+    st.markdown("""
+    <div class="guide-box">
+        <h3>📖 HƯỚNG DẪN VẬN HÀNH CHO NHÂN VIÊN</h3>
+        <ul>
+            <li><b>1. Nhập liệu chuẩn:</b> Nhập đúng số máy (Cột A) và lý do (Cột D) trên Google Sheets.</li>
+            <li><b>2. Tra cứu nhanh:</b> Luôn dùng Trợ lý AI để kiểm tra trước khi cấp phát linh kiện mới.</li>
+            <li><b>3. Quản lý vùng:</b> Sử dụng bộ lọc Sidebar bên trái để xem dữ liệu theo chi nhánh/miền.</li>
+            <li><b>4. Xuất báo cáo:</b> Dùng nút "Tải Báo Cáo" ở Sidebar hoặc nhấn <b>Ctrl + P</b> để lưu Dashboard sang PDF.</li>
+        </ul>
+        <p><i>Hệ thống được vận hành bởi AI Expert v5.1</i></p>
+    </div>
+    """, unsafe_allow_html=True)
+  
