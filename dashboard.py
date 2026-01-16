@@ -5,74 +5,86 @@ import plotly.express as px
 st.set_page_config(page_title="Hệ thống Quản lý Thiết bị Toàn Quốc", layout="wide")
 
 SHEET_ID = "16eiLNG46MCmS5GeETnotXW5GyNtvKNYBh_7Zk7IJRfA"
-# Ép quét 2000 dòng để đảm bảo không sót dữ liệu Miền Nam ở dưới cùng
-URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&range=A1:Z2000"
 
-@st.cache_data(ttl=10)
-def load_data_ultra():
+# Kỹ thuật mới: Đọc dữ liệu thô không phụ thuộc vào Filter của Google Sheets
+URL_RAW = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv"
+
+@st.cache_data(ttl=5) # Giảm thời gian cache để sếp sửa trên Sheets là App thấy ngay
+def load_data_final_v2():
     try:
-        df = pd.read_csv(URL, header=1)
+        # Đọc dữ liệu từ dòng 2 (bỏ qua tiêu đề gộp ô)
+        df = pd.read_csv(URL_RAW)
+        
+        # Ép tên cột về chuẩn để xử lý
         df.columns = [str(c).strip().upper() for c in df.columns]
         
-        col_ma = next((c for c in df.columns if "MÁY" in c), None)
-        col_kv = next((c for c in df.columns if "KHU VỰC" in c or "CHI NHÁNH" in c), None)
+        # Tự động tìm cột Khu vực (Cột F trong hình của sếp)
+        # Nếu không thấy tên, ta lấy cột thứ 6 (index 5) vì image_0333ed cho thấy nó là cột F
+        col_kv = next((c for c in df.columns if "CHI NHÁNH" in c or "KHU VỰC" in c), df.columns[5])
+        col_ma = next((c for c in df.columns if "MÁY" in c), df.columns[1])
         
-        if col_ma and col_kv:
-            df = df.dropna(subset=[col_ma])
-            
-            # HÀM CHUẨN HÓA SIÊU CẤP: Gộp ĐN vào Đà Nẵng, MN vào Miền Nam
-            def normalize_region(val):
-                v = str(val).strip().upper()
-                if v in ['MN', 'MIỀN NAM', 'MIEN NAM', 'NAM']: return 'Miền Nam'
-                if v in ['DN', 'ĐÀ NẴNG', 'DA NANG', 'TRUNG']: return 'Miền Trung/Đà Nẵng'
-                if v in ['MB', 'MIỀN BẮC', 'MIEN BAC', 'BẮC']: return 'Miền Bắc'
-                return v if v != 'NAN' else 'Chưa phân loại'
+        df = df.dropna(subset=[col_ma])
+        
+        # CHUẨN HÓA TOÀN DIỆN
+        def final_fix(val):
+            v = str(val).strip().upper()
+            if any(x in v for x in ['NAM', 'MN']): return 'MIỀN NAM'
+            if any(x in v for x in ['BẮC', 'MB']): return 'MIỀN BẮC'
+            if any(x in v for x in ['TRUNG', 'ĐN', 'DN', 'ĐÀ NẴNG']): return 'MIỀN TRUNG / ĐÀ NẴNG'
+            return 'KHÁC'
 
-            df['Chi Nhánh Chuẩn'] = df[col_kv].apply(normalize_region)
-            df['Mã số máy'] = df[col_ma].astype(str).str.split('.').str[0]
-            
-            return df
-        return pd.DataFrame()
+        df['Mã số máy'] = df[col_ma].astype(str).str.split('.').str[0]
+        df['Vùng Miền'] = df[col_kv].apply(final_fix)
+        
+        return df
     except Exception as e:
-        st.error(f"Lỗi kết nối: {e}")
+        st.error(f"Lỗi: {e}")
         return pd.DataFrame()
 
-df = load_data_ultra()
+df = load_data_final_v2()
 
 st.title("🛡️ Dashboard Quản trị Thiết bị Toàn Quốc")
 
 if not df.empty:
-    # Sidebar lọc thông minh
-    options = sorted(df['Chi Nhánh Chuẩn'].unique())
-    selected = st.sidebar.multiselect("📍 Chọn Miền", options, default=options)
-    df_filtered = df[df['Chi Nhánh Chuẩn'].isin(selected)]
+    # Sidebar lọc
+    all_vung = sorted(df['Vùng Miền'].unique())
+    selected = st.sidebar.multiselect("📍 Chọn Miền hiển thị", all_vung, default=all_vung)
+    df_filtered = df[df['Vùng Miền'].isin(selected)]
 
-    # Hiển thị KPI chính xác
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Tổng ca sửa chữa", len(df_filtered))
-    c2.metric("Số máy hỏng (Unique)", df_filtered['Mã số máy'].nunique())
+    # Chỉ số KPIs
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Tổng ca ghi nhận", len(df_filtered))
+    m2.metric("Số máy khác nhau", df_filtered['Mã số máy'].nunique())
     
-    # Đếm chính xác Miền Nam
-    mien_nam_count = len(df[df['Chi Nhánh Chuẩn'] == 'Miền Nam'])
-    c3.metric("Dữ liệu Miền Nam", mien_nam_count, delta="Đã đồng bộ MN" if mien_nam_count > 0 else "Chưa thấy dữ liệu")
+    # Kiểm tra trực tiếp Miền Nam
+    df_nam = df[df['Vùng Miền'] == 'MIỀN NAM']
+    m3.metric("Dữ liệu Miền Nam", len(df_nam), delta="Cần kiểm tra lại Sheets" if len(df_nam) == 0 else "Đã nhận")
 
     st.divider()
 
-    # Biểu đồ gộp (Không còn tình trạng hiện cả ĐN và Đà Nẵng riêng biệt)
-    df_chart = df_filtered['Chi Nhánh Chuẩn'].value_counts().reset_index()
-    df_chart.columns = ['Vùng Miền', 'Số Ca']
+    # Biểu đồ gộp sạch sẽ
+    df_chart = df_filtered['Vùng Miền'].value_counts().reset_index()
+    df_chart.columns = ['Khu vực', 'Số lượng']
     
-    fig = px.bar(df_chart, x='Vùng Miền', y='Số Ca', color='Vùng Miền', 
-                 text_auto=True, title="Thống kê lỗi gộp theo Miền")
+    fig = px.bar(df_chart, x='Khu vực', y='Số lượng', color='Khu vực', text_auto=True)
     st.plotly_chart(fig, use_container_width=True)
 
-    # Bảng kiểm tra dành riêng cho sếp
-    with st.expander("🔍 Kiểm tra dữ liệu Miền Nam (MN)"):
-        df_mn = df[df['Chi Nhánh Chuẩn'] == 'Miền Nam']
-        if not df_mn.empty:
-            st.write(f"Tìm thấy {len(df_mn)} dòng thuộc Miền Nam:")
-            st.dataframe(df_mn[['Mã số máy', 'Chi Nhánh Chuẩn']], use_container_width=True)
+    # CÔNG CỤ SOI DỮ LIỆU CHO SẾP
+    st.subheader("🔍 Công cụ soi dữ liệu thô")
+    col_check1, col_check2 = st.columns(2)
+    
+    with col_check1:
+        st.write("Các giá trị đang có trong cột Chi Nhánh của sếp:")
+        # Tìm lại tên cột gốc để hiện cho sếp xem
+        col_kv_name = next((c for c in df.columns if "CHI NHÁNH" in c or "KHU VỰC" in c or "UNNAMED: 5" in c), df.columns[5])
+        st.write(df[col_kv_name].unique())
+
+    with col_check2:
+        if len(df_nam) == 0:
+            st.error("❌ App vẫn báo 0 ca Miền Nam. Sếp hãy thử bỏ 'Filter' trong Google Sheets rồi nhấn F5 lại nhé!")
         else:
-            st.warning("Vẫn chưa tìm thấy dòng nào có giá trị 'MN' hoặc 'Miền Nam' trong cột Chi Nhánh.")
+            st.success(f"✅ Đã tìm thấy {len(df_nam)} dòng Miền Nam!")
+            st.dataframe(df_nam[['Mã số máy', 'Vùng Miền']].head())
+
 else:
-    st.info("Sếp hãy kiểm tra lại quyền chia sẻ Link Google Sheets nhé!")
+    st.warning("Đang tải...")
