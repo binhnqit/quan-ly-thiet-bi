@@ -4,7 +4,7 @@ import plotly.express as px
 import math
 from datetime import datetime
 
-# 1. CẤU HÌNH GIAO DIỆN GỐC (3 THẺ KPI)
+# 1. CẤU HÌNH GIAO DIỆN GỐC
 st.set_page_config(page_title="Hệ Thống Quản Trị Tài Sản AI", layout="wide")
 
 st.markdown("""
@@ -17,12 +17,12 @@ st.markdown("""
         border-top: 5px solid #1E3A8A;
     }
     .main-title { color: #1E3A8A; font-weight: 800; text-align: center; font-size: 2.2rem; margin-bottom: 20px; }
-    .chat-container { background-color: #f0f2f6; padding: 20px; border-radius: 15px; border: 1px solid #d1d5db; }
+    .chat-container { background-color: #f0f2f6; padding: 25px; border-radius: 15px; border: 2px solid #1E3A8A; }
     .guide-box { background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 5px solid #1E3A8A; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. KẾT NỐI DỮ LIỆU
+# 2. KẾT NỐI DỮ LIỆU & CHUẨN HÓA MÃ MÁY
 PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRuNH37yVPVZsAOyyJ4Eqvc0Hsd5XvucmKvw1XyZwhkeV6YVuxhZ14ACHxrtQf-KD-fP0yWlbgpdat-/pub?gid=675485241&single=true&output=csv"
 
 @st.cache_data(ttl=60)
@@ -30,15 +30,25 @@ def load_data():
     try:
         df = pd.read_csv(PUBLISHED_URL)
         df.columns = [f"COL_{i}" for i in range(len(df.columns))]
+        
+        # Hàm chuẩn hóa mã máy để Chatbot đọc không bao giờ sai
+        def clean_machine_code(val):
+            if pd.isna(val): return ""
+            # Chuyển 3534.0 -> 3534
+            s = str(val).split('.')[0].strip()
+            return s
+
+        df['MÃ_MÁY'] = df['COL_1'].apply(clean_machine_code)
+        
         def detect_region(row):
             text = " ".join(row.astype(str)).upper()
             if any(x in text for x in ["NAM", "MN"]): return "Miền Nam"
             if any(x in text for x in ["BẮC", "MB"]): return "Miền Bắc"
             if any(x in text for x in ["TRUNG", "ĐN", "DN"]): return "Miền Trung"
             return "Khác"
+        
         df['VÙNG_MIỀN'] = df.apply(detect_region, axis=1)
         df['LÝ_DO_HỎNG'] = df['COL_3'].fillna("Chưa rõ").astype(str).str.strip()
-        df['MÃ_MÁY'] = df['COL_1'].astype(str).str.split('.').str[0].str.strip()
         df['NGAY_FIX'] = pd.to_datetime(df['COL_6'], errors='coerce', dayfirst=True)
         df = df.dropna(subset=['NGAY_FIX'])
         df['NĂM'] = df['NGAY_FIX'].dt.year
@@ -46,9 +56,9 @@ def load_data():
         return df
     except: return pd.DataFrame()
 
-df_global = load_data() # Dữ liệu gốc để Chatbot quét toàn diện
+df_global = load_data()
 
-# --- BỘ LỌC CHIẾN LƯỢC (MẶC ĐỊNH NĂM 2026) ---
+# --- BỘ LỌC CHIẾN LƯỢC ---
 with st.sidebar:
     st.header("🛡️ BỘ LỌC CHIẾN LƯỢC")
     if not df_global.empty:
@@ -63,8 +73,6 @@ with st.sidebar:
         st.divider()
         csv = df_temp.to_csv(index=False).encode('utf-8-sig')
         st.download_button(label="📥 Tải Báo Cáo CSV", data=csv, file_name=f'Bao_cao_{sel_year}.csv', mime='text/csv')
-    else:
-        sel_year, sel_vung, sel_months = 2026, [], []
 
 df_filtered = df_global[(df_global['NĂM'] == sel_year) & (df_global['THÁNG'].isin(sel_months)) & (df_global['VÙNG_MIỀN'].isin(sel_vung))]
 machine_counts = df_global['MÃ_MÁY'].value_counts()
@@ -76,7 +84,6 @@ st.markdown('<p class="main-title">🛡️ HỆ THỐNG QUẢN TRỊ TÀI SẢN 
 tab1, tab2, tab3 = st.tabs(["📊 Dashboard & AI Chat", "⚡ Ưu Tiên Mua Sắm", "📖 Hướng Dẫn"])
 
 with tab1:
-    # 3 THẺ KPI GIAO DIỆN GỐC
     c1, c2, c3 = st.columns(3)
     c1.metric("Tổng lượt hỏng", f"{len(df_filtered)} ca")
     
@@ -88,12 +95,9 @@ with tab1:
     curr_crit_count = df_filtered[df_filtered['MÃ_MÁY'].isin(critical_machines)]['MÃ_MÁY'].nunique()
     c3.metric("Máy Nguy kịch (Đỏ)", f"{curr_crit_count}")
 
-    if curr_crit_count > 0:
-        st.toast(f"🚨 Cảnh báo: {curr_crit_count} máy cần thanh lý!", icon="🔥")
-
     st.divider()
 
-    # BIỂU ĐỒ TRÒN VÙNG MIỀN & LINH KIỆN
+    # BIỂU ĐỒ TRÒN & LINH KIỆN
     col_l, col_r = st.columns(2)
     with col_l:
         st.subheader("📍 Tỷ lệ hỏng theo Vùng miền")
@@ -105,33 +109,36 @@ with tab1:
             if 'pin' in r: return 'Pin'
             if 'màn' in r: return 'Màn hình'
             if 'phím' in r: return 'Bàn phím'
-            return 'Khác'
+            return 'Linh kiện khác'
         df_filtered['LK'] = df_filtered['LÝ_DO_HỎNG'].apply(classify)
         st.plotly_chart(px.bar(df_filtered['LK'].value_counts().reset_index(), x='count', y='LK', orientation='h'), use_container_width=True)
 
     st.divider()
 
-    # --- CHATBOT AI QUÉT DỮ LIỆU TOÀN DIỆN ---
-    st.subheader("💬 Trợ lý AI (Quét 3.976 dòng dữ liệu)")
+    # --- CHATBOT AI QUÉT DỮ LIỆU ĐÃ ĐƯỢC CHUẨN HÓA ---
+    st.subheader("💬 Trợ lý AI (Tra cứu bệnh án máy)")
     with st.container():
         st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-        q = st.text_input("Gõ mã máy để AI truy lục lịch sử (VD: 3534):")
+        q = st.text_input("Gõ mã máy để AI quét dữ liệu (VD: 3534):")
         if q:
+            # Tách lấy phần số từ câu hỏi của sếp
             import re
             m = re.search(r'\d+', q)
             if m:
-                code = m.group()
-                # Quét trên toàn bộ dữ liệu gốc df_global
-                res = df_global[df_global['MÃ_MÁY'] == code].sort_values('NGAY_FIX', ascending=False)
+                target_code = m.group()
+                # Quét trên toàn bộ 3.976 dòng đã chuẩn hóa
+                res = df_global[df_global['MÃ_MÁY'] == target_code].sort_values('NGAY_FIX', ascending=False)
+                
                 if not res.empty:
-                    st.markdown(f"✅ **AI tìm thấy:** Máy **{code}** hỏng **{len(res)} lần**.")
-                    if len(res) >= 4:
-                        st.error("🚨 LỜI KHUYÊN: Máy này đã hỏng quá nhiều lần. Đề xuất THANH LÝ để tránh lãng phí chi phí sửa chữa.")
+                    count = len(res)
+                    st.markdown(f"✅ **AI tìm thấy:** Máy **{target_code}** hỏng **{count} lần**.")
+                    if count >= 4:
+                        st.error(f"🚨 CẢNH BÁO: Máy {target_code} nằm trong danh sách ĐỎ. Đề xuất THANH LÝ NGAY.")
                     else:
-                        st.success("📝 LỜI KHUYÊN: Tần suất hỏng thấp. Tiếp tục theo dõi và bảo trì định kỳ.")
+                        st.success(f"📝 Ghi chú: Máy {target_code} vẫn ổn định. Ưu tiên bảo trì.")
                     st.dataframe(res[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']], use_container_width=True)
                 else:
-                    st.warning(f"❌ AI không tìm thấy mã máy {code} trong hệ thống dữ liệu.")
+                    st.warning(f"❌ Không tìm thấy mã máy '{target_code}' trong cơ sở dữ liệu. Sếp hãy kiểm tra lại số máy.")
         st.markdown('</div>', unsafe_allow_html=True)
 
 with tab2:
@@ -144,12 +151,10 @@ with tab2:
 with tab3:
     st.markdown("""
     <div class="guide-box">
-        <h3>📖 HƯỚNG DẪN VẬN HÀNH HỆ THỐNG</h3>
-        <p><b>1. Nhập liệu chuẩn hóa:</b> Luôn nhập đúng số máy vào cột A trên Google Sheets. AI sẽ tự động đồng bộ sau mỗi 60 giây.</p>
-        <p><b>2. Phân tích ưu tiên:</b> Cuối mỗi tuần, sếp nên vào Tab 2 để kiểm tra các máy hỏng linh kiện lõi (Main/Màn) để duyệt mua sắm gấp.</p>
-        <p><b>3. Sử dụng Chatbot:</b> Trước khi xuất linh kiện thay thế, Kỹ thuật viên phải gõ mã máy vào Chatbot. Nếu AI báo "Thanh lý", tuyệt đối không cấp linh kiện mới.</p>
-        <p><b>4. Xuất báo cáo:</b> Dùng nút "Tải Báo Cáo CSV" ở sidebar để gửi dữ liệu cho bộ phận Kế toán cuối tháng.</p>
-        <hr>
-        <p><i>Hệ thống được tối ưu hóa cho năm tài chính 2026.</i></p>
+        <h3>📖 QUY TRÌNH VẬN HÀNH 2026</h3>
+        <p><b>Bước 1:</b> Kiểm tra 3 thẻ KPI đầu trang để nắm tổng thể chi phí rủi ro.</p>
+        <p><b>Bước 2:</b> Sử dụng <b>Trợ lý AI</b> để kiểm tra tiền sử của máy trước khi duyệt linh kiện thay thế.</p>
+        <p><b>Bước 3:</b> Tải báo cáo CSV ở sidebar hàng tuần để lưu trữ dữ liệu đối soát.</p>
+        <p><b>Bước 4:</b> Các máy có trạng thái "Nguy kịch" cần được lập danh sách thanh lý định kỳ.</p>
     </div>
     """, unsafe_allow_html=True)
