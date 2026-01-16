@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import math
+from datetime import datetime
 
-# 1. CẤU HÌNH GIAO DIỆN (GIỮ NGUYÊN STYLE PRO)
+# 1. CẤU HÌNH GIAO DIỆN GỐC
 st.set_page_config(page_title="Hệ Thống Quản Trị Tài Sản AI", layout="wide")
 
 st.markdown("""
@@ -16,12 +17,11 @@ st.markdown("""
         border: 1px solid #e2e8f0;
         border-top: 5px solid #1E3A8A;
     }
-    .main-title { color: #1E3A8A; font-weight: 800; text-align: center; font-size: 2.5rem; margin-bottom: 20px; }
-    .section-header { color: #1E3A8A; font-weight: 700; margin-top: 30px; }
+    .main-title { color: #1E3A8A; font-weight: 800; text-align: center; font-size: 2.2rem; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. KẾT NỐI DỮ LIỆU (TỔNG 3.976 DÒNG)
+# 2. KẾT NỐI DỮ LIỆU (3.976 DÒNG)
 PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRuNH37yVPVZsAOyyJ4Eqvc0Hsd5XvucmKvw1XyZwhkeV6YVuxhZ14ACHxrtQf-KD-fP0yWlbgpdat-/pub?gid=675485241&single=true&output=csv"
 
 @st.cache_data(ttl=60)
@@ -46,17 +46,27 @@ def load_data():
     except: return pd.DataFrame()
 
 df = load_data()
+current_year = datetime.now().year # Năm hiện tại 2026
 
-# --- BỘ LỌC CHIẾN LƯỢC (SIDEBAR) ---
+# --- SIDEBAR & TẢI FILE CSV ---
 with st.sidebar:
     st.header("🛡️ BỘ LỌC CHIẾN LƯỢC")
     list_years = sorted(df['NĂM'].unique(), reverse=True)
-    sel_year = st.selectbox("Chọn Năm", list_years)
+    # MẶC ĐỊNH LÀ NĂM HIỆN TẠI
+    sel_year = st.selectbox("📅 Chọn Năm", list_years, index=list_years.index(current_year) if current_year in list_years else 0)
+    
     list_vung = sorted(df['VÙNG_MIỀN'].unique())
-    sel_vung = st.multiselect("Chọn Miền", list_vung, default=list_vung)
+    sel_vung = st.multiselect("📍 Chọn Miền", list_vung, default=list_vung)
+    
     df_temp = df[(df['NĂM'] == sel_year) & (df['VÙNG_MIỀN'].isin(sel_vung))]
     list_months = sorted(df_temp['THÁNG'].unique())
-    sel_months = st.multiselect("Chọn Tháng", list_months, default=list_months)
+    sel_months = st.multiselect("📆 Chọn Tháng", list_months, default=list_months)
+    
+    st.divider()
+    # TỰ ĐỘNG HÓA TRÍCH XUẤT CSV
+    if not df_temp.empty:
+        csv = df_temp.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(label="📥 Tải Báo Cáo CSV", data=csv, file_name=f'Bao_cao_{sel_year}.csv', mime='text/csv')
 
 df_filtered = df[(df['NĂM'] == sel_year) & (df['THÁNG'].isin(sel_months)) & (df['VÙNG_MIỀN'].isin(sel_vung))]
 
@@ -66,44 +76,48 @@ st.markdown('<p class="main-title">🛡️ HỆ THỐNG QUẢN TRỊ TÀI SẢN 
 tab1, tab2, tab3 = st.tabs(["📊 Báo Cáo Chiến Lược", "⚡ Ưu Tiên Mua Sắm", "📖 Hướng Dẫn"])
 
 with tab1:
-    # KHỐI THẺ KPI (GIỮ ĐÚNG GIAO DIỆN SẾP CHỌN)
+    # 3 THẺ KPI GIAO DIỆN GỐC
     c1, c2, c3 = st.columns(3)
     c1.metric("Tổng lượt hỏng", f"{len(df_filtered)} ca")
     
+    # DỰ BÁO CHI PHÍ
     n_m = len(sel_months) if sel_months else 1
     forecast_counts = df_filtered['LÝ_DO_HỎNG'].value_counts().head(5)
     est_budget = sum([math.ceil((v/n_m)*1.2)*500000 for v in forecast_counts.values])
     c2.metric("Ngân sách dự phòng", f"{est_budget:,.0f}đ")
     
+    # THẺ ĐIỂM SỨC KHỎE (MÁY ĐỎ)
     bad_assets = (df['MÃ_MÁY'].value_counts() >= 4).sum()
     c3.metric("Máy Nguy kịch (Đỏ)", f"{bad_assets}")
 
     st.divider()
     
-    # TRA CỨU HỒ SƠ
+    # TRỢ LÝ TRA CỨU HỒ SƠ
     st.subheader("💬 Trợ lý Tra cứu Hồ sơ")
-    ma_may = st.text_input("Gõ mã máy (VD: 3534):", key="search_main")
+    ma_may = st.text_input("Gõ mã máy (VD: 3534):", placeholder="Nhập mã máy để AI truy lục...")
     if ma_may:
         h = df[df['MÃ_MÁY'] == ma_may.strip()].sort_values('NGAY_FIX', ascending=False)
         if not h.empty:
-            st.info(f"Tìm thấy {len(h)} lần sửa cho máy {ma_may}")
+            st.success(f"Tìm thấy {len(h)} lần sửa cho máy {ma_may}")
             st.table(h[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']])
         else:
-            st.error(f"Không tìm thấy mã máy {ma_may} trong hệ thống.")
+            st.error(f"Không tìm thấy mã máy {ma_may} trong 3.976 dòng dữ liệu.")
 
-    # BIỂU ĐỒ TRỰC QUAN
-    col_l, col_r = st.columns(2)
-    with col_l:
-        st.subheader("📍 Tỷ lệ theo Vùng")
-        st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.5), use_container_width=True)
-    with col_r:
-        st.subheader("🛠️ Top 10 lỗi phổ biến")
-        st.plotly_chart(px.bar(df_filtered['LÝ_DO_HỎNG'].value_counts().head(10), orientation='h'), use_container_width=True)
+    st.divider()
+    
+    # BẢN ĐỒ SỐ PHÂN VÙNG RỦI RO (MỚI)
+    st.subheader("🗺️ Bản đồ số phân vùng rủi ro & Chi phí")
+    col_map_l, col_map_r = st.columns(2)
+    with col_map_l:
+        st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.5, title="Tỷ lệ ca hỏng theo vùng"), use_container_width=True)
+    with col_map_r:
+        # Tính toán chi phí rủi ro theo vùng
+        risk_df = df_filtered.groupby('VÙNG_MIỀN').size().reset_index(name='Số ca')
+        risk_df['Chi phí dự kiến'] = risk_df['Số ca'] * 500000
+        st.plotly_chart(px.bar(risk_df, x='VÙNG_MIỀN', y='Chi phí dự kiến', color='VÙNG_MIỀN', title="Dòng tiền rủi ro theo chi nhánh"), use_container_width=True)
 
 with tab2:
-    st.subheader("📋 Danh Sách Ưu Tiên Mua Sắm")
-    
-    # Thuật toán phân cấp ưu tiên
+    st.header("📋 Hệ Thống Ưu Tiên Tự Động")
     def get_priority(row):
         m_code = str(row['MÃ_MÁY'])
         h_count = len(df[df['MÃ_MÁY'] == m_code])
@@ -116,10 +130,10 @@ with tab2:
         df_p['ƯU TIÊN'] = df_p.apply(get_priority, axis=1)
         st.dataframe(df_p[['ƯU TIÊN', 'MÃ_MÁY', 'LÝ_DO_HỎNG', 'NGAY_FIX', 'VÙNG_MIỀN']], use_container_width=True)
     else:
-        st.warning("Vui lòng chọn dữ liệu để phân tích ưu tiên.")
+        st.warning("Vui lòng chọn dữ liệu để AI phân tích.")
 
 with tab3:
-    st.info("### 📘 Quy trình vận hành chuẩn")
-    st.write("1. Luôn tra cứu hồ sơ tại Tab 1 trước khi quyết định sửa chữa.")
-    st.write("2. Ưu tiên cấp ngân sách cho các máy nằm trong diện KHẨN CẤP tại Tab 2.")
-    st.write("3. Nhấn Ctrl + P để in báo cáo khi cần trình ký.")
+    st.info("### 📘 Quy trình vận hành chuẩn 2026")
+    st.write("1. **Cập nhật:** Nhân viên nhập liệu vào Google Sheets mỗi khi hoàn thành sửa chữa.")
+    st.write("2. **Kiểm soát:** Sếp dùng Sidebar tải CSV hàng tuần để lưu trữ offline.")
+    st.write("3. **Ra quyết định:** Ưu tiên duyệt chi cho các thiết bị 'Đỏ' (Health Score thấp).")
