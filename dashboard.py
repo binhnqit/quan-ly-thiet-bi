@@ -4,7 +4,7 @@ import plotly.express as px
 import math
 from datetime import datetime
 
-# 1. CẤU HÌNH GIAO DIỆN GỐC (GIỮ NGUYÊN STYLE CARDS)
+# 1. CẤU HÌNH GIAO DIỆN GỐC
 st.set_page_config(page_title="Hệ Thống Quản Trị Tài Sản AI", layout="wide")
 
 st.markdown("""
@@ -18,7 +18,7 @@ st.markdown("""
         border-top: 5px solid #1E3A8A;
     }
     .main-title { color: #1E3A8A; font-weight: 800; text-align: center; font-size: 2.2rem; margin-bottom: 20px; }
-    .stAlert { border-radius: 10px; }
+    .chat-container { background-color: #f8f9fa; padding: 20px; border-radius: 15px; border: 1px solid #dee2e6; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -47,17 +47,15 @@ def load_data():
     except: return pd.DataFrame()
 
 df = load_data()
-current_year = datetime.now().year
+current_year = 2026
 
 # --- SIDEBAR & TẢI CSV ---
 with st.sidebar:
     st.header("🛡️ BỘ LỌC CHIẾN LƯỢC")
     list_years = sorted(df['NĂM'].unique(), reverse=True)
     sel_year = st.selectbox("📅 Chọn Năm", list_years, index=list_years.index(current_year) if current_year in list_years else 0)
-    
     list_vung = sorted(df['VÙNG_MIỀN'].unique())
     sel_vung = st.multiselect("📍 Chọn Miền", list_vung, default=list_vung)
-    
     df_temp = df[(df['NĂM'] == sel_year) & (df['VÙNG_MIỀN'].isin(sel_vung))]
     list_months = sorted(df_temp['THÁNG'].unique())
     sel_months = st.multiselect("📆 Chọn Tháng", list_months, default=list_months)
@@ -67,24 +65,15 @@ with st.sidebar:
         csv = df_temp.to_csv(index=False).encode('utf-8-sig')
         st.download_button(label="📥 Tải Báo Cáo CSV", data=csv, file_name=f'Bao_cao_{sel_year}.csv', mime='text/csv')
 
-# Lọc dữ liệu chính theo bộ lọc
+# Lọc dữ liệu chính
 df_filtered = df[(df['NĂM'] == sel_year) & (df['THÁNG'].isin(sel_months)) & (df['VÙNG_MIỀN'].isin(sel_vung))]
-
-# --- THÔNG BÁO ĐẨY (PUSH NOTIFICATION) ---
-# Kiểm tra trong tập dữ liệu lọc có máy nào mới rơi vào danh sách hỏng >= 4 lần không
 machine_counts = df['MÃ_MÁY'].value_counts()
 critical_machines = machine_counts[machine_counts >= 4].index.tolist()
-current_filter_critical = df_filtered[df_filtered['MÃ_MÁY'].isin(critical_machines)]['MÃ_MÁY'].unique()
-
-if len(current_filter_critical) > 0:
-    st.toast(f"🚨 CẢNH BÁO: Phát hiện {len(current_filter_critical)} thiết bị Nguy kịch trong bộ lọc hiện tại!", icon="🔥")
-    with st.expander("⚠️ Danh sách máy cần kiểm tra gấp"):
-        st.error(f"Các máy sau đã hỏng trên 4 lần: {', '.join(current_filter_critical[:10])}...")
 
 # --- GIAO DIỆN CHÍNH ---
 st.markdown('<p class="main-title">🛡️ HỆ THỐNG QUẢN TRỊ TÀI SẢN CHIẾN LƯỢC AI</p>', unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["📊 Báo Cáo Chiến Lược", "⚡ Ưu Tiên Mua Sắm", "📖 Hướng Dẫn"])
+tab1, tab2, tab3 = st.tabs(["📊 Dashboard & AI Chat", "⚡ Ưu Tiên Mua Sắm", "📖 Hướng Dẫn"])
 
 with tab1:
     # 3 THẺ KPI GIAO DIỆN GỐC
@@ -96,62 +85,62 @@ with tab1:
     est_budget = sum([math.ceil((v/n_m)*1.2)*500000 for v in forecast_counts.values])
     c2.metric("Ngân sách dự phòng", f"{est_budget:,.0f}đ")
     
-    c3.metric("Máy Nguy kịch (Health < 30%)", f"{len(current_filter_critical)}")
+    # Máy nguy kịch trong bộ lọc hiện tại
+    current_critical = df_filtered[df_filtered['MÃ_MÁY'].isin(critical_machines)]['MÃ_MÁY'].nunique()
+    c3.metric("Máy Nguy kịch (Đỏ)", f"{current_critical}")
+
+    if current_critical > 0:
+        st.toast(f"🚨 Có {current_critical} máy nguy kịch cần xử lý!", icon="🔥")
 
     st.divider()
 
-    # THỐNG KÊ LINH KIỆN HƯ HỎNG (MỚI)
-    st.subheader("🛠️ Thống kê linh kiện hư hỏng theo bộ lọc")
-    
-    # Hàm phân loại linh kiện từ mô tả lỗi
+    # --- CHATBOT AI CHIẾN LƯỢC ---
+    st.subheader("💬 Trợ lý AI Phân tích Thiết bị")
+    with st.container():
+        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+        user_input = st.text_input("Hỏi AI về mã máy (VD: 'Kiểm tra máy 3534' hoặc 'Tháng này hỏng gì nhiều nhất?')")
+        
+        if user_input:
+            import re
+            match = re.search(r'\d+', user_input)
+            
+            if match:
+                code = match.group()
+                history = df[df['MÃ_MÁY'] == code].sort_values('NGAY_FIX', ascending=False)
+                if not history.empty:
+                    count = len(history)
+                    st.markdown(f"**AI Phản hồi:** Máy **{code}** có lịch sử hỏng **{count} lần**.")
+                    if count >= 4:
+                        st.error("⚠️ Lời khuyên AI: Máy này đã quá nát (Nguy kịch). KHÔNG NÊN SỬA THÊM, hãy lập biên bản thanh lý để tối ưu ngân sách.")
+                    else:
+                        st.info("✅ Lời khuyên AI: Tình trạng máy vẫn trong tầm kiểm soát. Ưu tiên sửa chữa linh kiện chính hãng.")
+                    st.table(history[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']])
+                else:
+                    st.warning(f"AI không tìm thấy dữ liệu cho máy {code}.")
+            elif "hỏng gì nhiều" in user_input.lower():
+                top_fail = df_filtered['LÝ_DO_HỎNG'].value_counts().idxmax()
+                st.markdown(f"**AI Phản hồi:** Theo bộ lọc sếp chọn, lỗi hỏng **'{top_fail}'** đang chiếm tỷ lệ cao nhất. Sếp nên kiểm tra lại chất lượng linh kiện này hoặc cách sử dụng của nhân viên.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.divider()
+
+    # THỐNG KÊ LINH KIỆN
+    st.subheader("🛠️ Thống kê linh kiện hư hỏng")
     def classify_part(reason):
         reason = reason.lower()
         if 'pin' in reason: return 'Pin'
-        if 'màn' in reason or 'lcd' in reason: return 'Màn hình'
-        if 'phím' in reason or 'keyboard' in reason: return 'Bàn phím'
-        if 'nguồn' in reason or 'sạc' in reason: return 'Bộ nguồn/Sạc'
-        if 'ổ cứng' in reason or 'ssd' in reason or 'hhd' in reason: return 'Ổ cứng'
-        if 'main' in reason or 'bo mạch' in reason: return 'Mainboard'
+        if 'màn' in reason: return 'Màn hình'
+        if 'phím' in reason: return 'Bàn phím'
+        if 'nguồn' in reason or 'sạc' in reason: return 'Sạc/Nguồn'
         return 'Linh kiện khác'
 
     df_filtered['LINH_KIỆN'] = df_filtered['LÝ_DO_HỎNG'].apply(classify_part)
-    part_stats = df_filtered['LINH_KIỆN'].value_counts().reset_index()
-    part_stats.columns = ['Linh kiện', 'Số lượng hỏng']
-
-    col_chart1, col_chart2 = st.columns([6, 4])
-    with col_chart1:
-        fig_parts = px.bar(part_stats, x='Số lượng hỏng', y='Linh kiện', orientation='h', 
-                           title="Biểu đồ phân loại linh kiện thay thế",
-                           color='Số lượng hỏng', color_continuous_scale='RdBu')
-        st.plotly_chart(fig_parts, use_container_width=True)
-    with col_chart2:
-        st.write("**Bảng chi tiết linh kiện:**")
-        st.dataframe(part_stats, use_container_width=True)
-
-    st.divider()
-    
-    # BẢN ĐỒ PHÂN VÙNG RỦI RO
-    st.subheader("🗺️ Bản đồ rủi ro theo vùng miền")
-    col_map_l, col_map_r = st.columns(2)
-    with col_map_l:
-        st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.5, title="Tỷ lệ ca hỏng"), use_container_width=True)
-    with col_map_r:
-        risk_df = df_filtered.groupby('VÙNG_MIỀN').size().reset_index(name='Số ca')
-        st.plotly_chart(px.bar(risk_df, x='VÙNG_MIỀN', y='Số ca', color='VÙNG_MIỀN', title="Số ca hỏng chi tiết"), use_container_width=True)
+    fig_parts = px.bar(df_filtered['LINH_KIỆN'].value_counts().reset_index(), x='count', y='LINH_KIỆN', orientation='h', title="Phân loại lỗi linh kiện")
+    st.plotly_chart(fig_parts, use_container_width=True)
 
 with tab2:
-    st.header("📋 Hệ Thống Ưu Tiên Mua Sắm & Sửa Chữa")
-    # ... (Giữ nguyên logic Tab 2 như bản cũ sếp đã duyệt)
+    st.header("📋 Hệ Thống Ưu Tiên Mua Sắm")
     if not df_filtered.empty:
         df_p = df_filtered.copy()
-        def get_priority(row):
-            if any(x in str(row['LÝ_DO_HỎNG']) for x in ['Màn', 'Main', 'Nguồn']): return "🔴 KHẨN CẤP"
-            if str(row['MÃ_MÁY']) in critical_machines: return "🟠 CAO"
-            return "🟢 BÌNH THƯỜNG"
-        df_p['ƯU TIÊN'] = df_p.apply(get_priority, axis=1)
+        df_p['ƯU TIÊN'] = df_p.apply(lambda r: "🔴 KHẨN CẤP" if any(x in str(r['LÝ_DO_HỎNG']) for x in ['Màn', 'Main']) else "🟢 BÌNH THƯỜNG", axis=1)
         st.dataframe(df_p[['ƯU TIÊN', 'MÃ_MÁY', 'LÝ_DO_HỎNG', 'NGAY_FIX', 'VÙNG_MIỀN']], use_container_width=True)
-
-with tab3:
-    st.info("### 📘 Quy trình vận hành chuẩn")
-    st.write("1. **Theo dõi thông báo:** Nếu thấy Toast cảnh báo hiện lên, kiểm tra ngay danh sách máy Nguy kịch.")
-    st.write("2. **Duyệt mua sắm:** Sử dụng biểu đồ 'Thống kê linh kiện' để biết cần nhập hàng loại nào về kho nhiều nhất.")
