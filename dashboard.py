@@ -8,16 +8,16 @@ st.set_page_config(page_title="Hệ thống Quản lý Thiết bị Toàn Quốc
 SHEET_ID = "16eiLNG46MCmS5GeETnotXW5GyNtvKNYBh_7Zk7IJRfA"
 
 @st.cache_data(ttl=1)
-def load_data_detective():
+def load_data_final_v2():
     try:
-        # Ép Google xóa cache để lấy đủ > 3000 dòng
+        # Ép Google xóa cache bằng số ngẫu nhiên để lấy đủ > 3000 dòng
         rid = random.randint(1, 1000000)
         URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&refresh={rid}"
         
-        # Đọc dữ liệu từ dòng đầu tiên để không bỏ sót
+        # Đọc dữ liệu từ dòng đầu tiên
         df = pd.read_csv(URL)
         
-        # Xử lý lỗi trùng tên cột (Duplicate Column)
+        # 1. XỬ LÝ TRÙNG TÊN CỘT (Triệt tiêu lỗi ValueError)
         new_cols = []
         counts = {}
         for i, col in enumerate(df.columns):
@@ -31,18 +31,18 @@ def load_data_detective():
                 new_cols.append(c)
         df.columns = new_cols
 
-        # --- CHIẾN THUẬT MẮT THẦN: TỰ TÌM CỘT CHỨA MIỀN ---
-        def find_region(row):
-            row_str = " ".join(row.astype(str).upper())
-            if "NAM" in row_str or "MN" in row_str: return "Miền Nam"
-            if "BẮC" in row_str or "MB" in row_str: return "Miền Bắc"
-            if "TRUNG" in row_str or "ĐN" in row_str or "DN" in row_str: return "Miền Trung"
+        # 2. CHIẾN THUẬT QUÉT TỪNG DÒNG (Đã fix lỗi .upper())
+        def find_region_safe(row):
+            # Chuyển toàn bộ dòng thành 1 chuỗi văn bản duy nhất để quét
+            text = " ".join(row.astype(str)).upper()
+            if any(x in text for x in ["MIỀN NAM", " NAM ", " MN ", "NAM"]): return "Miền Nam"
+            if any(x in text for x in ["MIỀN BẮC", " BẮC ", " MB ", "BẮC"]): return "Miền Bắc"
+            if any(x in text for x in ["MIỀN TRUNG", " TRUNG ", " ĐN ", " DN "]): return "Miền Trung"
             return "Khác/Chưa nhập"
 
-        # Quét toàn bộ các cột để xác định vùng miền
-        df['VÙNG_PHÂN_LOẠI'] = df.apply(find_region, axis=1)
+        df['VÙNG_MIỀN'] = df.apply(find_region_safe, axis=1)
         
-        # Lấy cột mã máy (Thường là cột thứ 2 - Index 1)
+        # Lấy cột Mã máy (Thường là cột thứ 2 - Index 1)
         col_ma = df.columns[1]
         df['MÃ_MÁY_FIX'] = df[col_ma].astype(str).str.split('.').str[0]
         
@@ -55,33 +55,32 @@ def load_data_detective():
         st.error(f"Lỗi: {e}")
         return pd.DataFrame()
 
-df = load_data_detective()
+df = load_data_final_v2()
 
-st.title("🛡️ Dashboard Quản trị Thiết bị Pro")
+st.title("🛡️ Dashboard Quản trị Thiết bị Toàn Quốc")
 
 if not df.empty:
     # KPIs
     c1, c2, c3 = st.columns(3)
-    # Tổng dòng bây giờ phải vượt qua 2521
-    c1.metric("Tổng số ca ghi nhận", len(df))
+    c1.metric("Tổng số dòng thực tế", len(df))
     c2.metric("Số máy khác nhau", df['MÃ_MÁY_FIX'].nunique())
     
-    val_mn = len(df[df['VÙNG_PHÂN_LOẠI'] == 'Miền Nam'])
-    c3.metric("Dữ liệu Miền Nam", val_mn, delta="Đã nhận diện" if val_mn > 0 else "Kiểm tra lại text")
+    val_mn = len(df[df['VÙNG_MIỀN'] == 'Miền Nam'])
+    c3.metric("Dữ liệu Miền Nam", val_mn)
 
     st.divider()
 
-    # Biểu đồ chuẩn màu sếp thích
-    chart_data = df['VÙNG_PHÂN_LOẠI'].value_counts().reset_index()
+    # Biểu đồ
+    chart_data = df['VÙNG_MIỀN'].value_counts().reset_index()
     chart_data.columns = ['Vùng', 'Số lượng']
     fig = px.bar(chart_data, x='Vùng', y='Số lượng', color='Vùng', text_auto=True,
-                 color_discrete_map={"Miền Nam": "#28a745", "Miền Bắc": "#007bff", "Miền Trung": "#ffc107", "Khác/Chưa nhập": "#6c757d"})
+                 color_discrete_map={"Miền Nam": "#28a745", "Miền Bắc": "#007bff", "Miền Trung": "#ffc107"})
     st.plotly_chart(fig, use_container_width=True)
 
     # PHẦN KIỂM TRA QUAN TRỌNG
-    with st.expander("🔍 Soi dữ liệu dòng cuối cùng"):
+    with st.expander("🔍 Soi dữ liệu dòng cuối cùng (Kiểm tra mốc 3647)"):
         st.write(f"App đang đọc được tổng cộng: **{len(df)}** dòng.")
         st.dataframe(df.tail(100))
 
 else:
-    st.info("Sếp đợi vài giây để dữ liệu từ Google Sheets tải về...")
+    st.info("Sếp đợi vài giây để dữ liệu tải về...")
