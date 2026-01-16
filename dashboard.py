@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import numpy as np
 
 st.set_page_config(page_title="Hệ thống Quản trị Laptop Enterprise", layout="wide")
 
+# Link dữ liệu chuẩn của sếp
 PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRuNH37yVPVZsAOyyJ4Eqvc0Hsd5XvucmKvw1XyZwhkeV6YVuxhZ14ACHxrtQf-KD-fP0yWlbgpdat-/pub?gid=675485241&single=true&output=csv"
 
 @st.cache_data(ttl=60)
@@ -27,7 +27,9 @@ def load_expert_data():
         
         # Xử lý thời gian chuyên sâu
         df['NGAY_FIX'] = pd.to_datetime(df['COL_6'], errors='coerce', dayfirst=True)
-        df = df.dropna(subset=['NGAY_FIX']) # Chỉ lấy những dòng có ngày để báo cáo thời gian
+        # Loại bỏ các dòng không có ngày để báo cáo thời gian chính xác
+        df = df.dropna(subset=['NGAY_FIX']) 
+        
         df['YEAR'] = df['NGAY_FIX'].dt.year.astype(int)
         df['MONTH'] = df['NGAY_FIX'].dt.month.astype(int)
         
@@ -41,93 +43,85 @@ def load_expert_data():
 
 df = load_expert_data()
 
-# --- SIDEBAR: QUẢN TRỊ THỜI GIAN ---
+# --- SIDEBAR: QUẢN TRỊ THỜI GIAN & KHU VỰC ---
 with st.sidebar:
-    st.header("🕒 Quản trị Thời gian")
+    st.header("🕒 Bộ lọc Chuyên gia")
     
     # Lọc Năm
     list_years = sorted(df['YEAR'].unique(), reverse=True)
     selected_year = st.selectbox("Chọn Năm báo cáo", list_years)
     
-    # Lọc Tháng (Chỉ hiện các tháng có trong năm đã chọn)
+    # Lọc Tháng (Chỉ hiện tháng có trong năm đã chọn)
     df_year = df[df['YEAR'] == selected_year]
     list_months = sorted(df_year['MONTH'].unique())
     selected_months = st.multiselect("Chọn Tháng", options=list_months, default=list_months, format_func=lambda x: f"Tháng {x}")
     
     st.header("📍 Khu vực")
     list_vung = ["Miền Bắc", "Miền Trung", "Miền Nam"]
-    selected_vung = st.multiselect("Vùng miền", list_vung, default=list_vung)
+    selected_vung = st.multiselect("Chọn Vùng", list_vung, default=list_vung)
     
     st.divider()
-    st.info("💡 Chế độ: Chuyên gia 15 năm kinh nghiệm")
+    st.write(f"✅ Đang quét: **{len(df)}** dòng dữ liệu")
 
-# LỌC DỮ LIỆU
+# LỌC DỮ LIỆU TỔNG
 mask = (df['YEAR'] == selected_year) & (df['MONTH'].isin(selected_months)) & (df['VÙNG_MIỀN'].isin(selected_vung))
 df_filtered = df[mask]
 
-# --- GIAO DIỆN ---
+# --- GIAO DIỆN CHÍNH ---
 st.title("🛡️ Enterprise IT Asset Management Dashboard")
 
-# 1. TRUY VẾT MÃ MÁY (DRILL-DOWN)
-st.markdown("### 🔍 Truy vết "Hồ sơ bệnh án" thiết bị")
-search_query = st.text_input("Nhập mã máy (VD: 2498)", key="expert_search").strip()
+# 1. TRUY VẾT MÃ MÁY (Sửa lỗi Syntax tại đây)
+st.markdown("### 🔍 Truy vết Hồ sơ bệnh án thiết bị")
+search_query = st.text_input("Nhập chính xác mã máy (Ví dụ: 2498)", key="expert_search").strip()
+
 if search_query:
     history = df[df['MÃ_MÁY'] == search_query].sort_values('NGAY_FIX', ascending=False)
     if not history.empty:
-        with st.expander(f"Hồ sơ máy {search_query}", expanded=True):
+        with st.container(border=True):
+            st.info(f"📋 **HỒ SƠ THIẾT BỊ: {search_query}**")
             c_a, c_b, c_c = st.columns(3)
-            c_a.metric("Số lần sửa", f"{len(history)} lần")
-            c_b.metric("Vùng", history['VÙNG_MIỀN'].iloc[0])
-            c_c.warning("Tình trạng: Cần theo dõi" if len(history) >= 2 else "Tình trạng: Tốt")
+            num_fixes = len(history)
+            c_a.metric("Số lần sửa", f"{num_fixes} lần")
+            c_b.metric("Vùng quản lý", history['VÙNG_MIỀN'].iloc[0])
+            status = "🚨 NGUY CƠ CAO" if num_fixes >= 3 else "✅ BÌNH THƯỜNG"
+            c_c.metric("Tình trạng", status)
+            
+            st.write("**Lịch sử chi tiết:**")
             st.table(history[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']])
     else:
-        st.error("Không tìm thấy mã máy này.")
+        st.error(f"Không tìm thấy mã máy '{search_query}'")
 
 st.divider()
 
-# 2. KPIs CHUYÊN SÂU
+# 2. KPIs CHIẾN LƯỢC
 k1, k2, k3, k4 = st.columns(4)
 with k1:
     st.metric("Tổng lượt hỏng (Kỳ này)", f"{len(df_filtered):,}")
 with k2:
-    st.metric("Tài sản lỗi (Máy)", f"{df_filtered['MÃ_MÁY'].nunique():,}")
+    st.metric("Số máy phát sinh lỗi", f"{df_filtered['MÃ_MÁY'].nunique():,}")
 with k3:
-    # Dự báo linh kiện cần chuẩn bị cho tháng sau
-    next_month_est = int(len(df_filtered) / len(selected_months)) if selected_months else 0
-    st.metric("Dự báo ca hỏng/tháng tới", next_month_est, delta="Dự trù kho")
+    # Dự báo dựa trên trung bình các tháng đã chọn
+    avg_per_month = len(df_filtered) / len(selected_months) if selected_months else 0
+    st.metric("Dự báo ca lỗi/tháng tới", int(avg_per_month), delta="Linh kiện dự phòng")
 with k4:
-    # Tính tỷ lệ máy lỗi lặp lại
-    repeat_rate = (df_filtered['MÃ_MÁY'].value_counts() >= 2).sum()
-    st.metric("Máy lỗi lặp lại", repeat_rate, delta="Cần thanh lý", delta_color="inverse")
+    repeat_count = (df_filtered['MÃ_MÁY'].value_counts() >= 3).sum()
+    st.metric("Số máy cần thanh lý", repeat_count, delta="Lỗi >= 3 lần", delta_color="inverse")
 
 st.divider()
 
-# 3. BIỂU ĐỒ PHÂN TÍCH
-c_left, c_right = st.columns([1, 1])
+# 3. BIỂU ĐỒ PHÂN TÍCH 
+col_left, col_right = st.columns([6, 4])
 
-with c_left:
-    st.subheader("🛠️ Phân tích Linh kiện/Lý do hỏng (Top 15)")
+with col_left:
+    st.subheader("🛠️ Top 15 Lý do hỏng / Linh kiện (Cột D)")
     reasons = df_filtered['LÝ_DO_HỎNG'].value_counts().head(15).reset_index()
-    fig_bar = px.bar(reasons, x='count', y='LÝ_DO_HỎNG', orientation='h', text_auto=True,
-                     color='count', color_continuous_scale='Turbo')
-    fig_bar.update_layout(yaxis={'categoryorder':'total ascending'})
+    reasons.columns = ['Lý do', 'Số lượng']
+    fig_bar = px.bar(reasons, x='Số lượng', y='Lý do', orientation='h', text_auto=True,
+                     color='Số lượng', color_continuous_scale='Turbo')
+    fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False)
     st.plotly_chart(fig_bar, use_container_width=True)
 
-with c_right:
-    st.subheader("📈 Xu hướng phát sinh lỗi")
-    trend = df_filtered.groupby('NGAY_FIX').size().reset_index()
-    trend.columns = ['Ngày', 'Số ca']
-    fig_trend = px.area(trend, x='Ngày', y='Số ca', line_shape='spline')
-    st.plotly_chart(fig_trend, use_container_width=True)
-
-
-
-# 4. DANH SÁCH "ĐEN" - CẢNH BÁO TÀI SẢN
-st.subheader("🚨 Cảnh báo: Tài sản ngốn chi phí nhất (Hỏng >= 3 lần)")
-bad_list = df_filtered['MÃ_MÁY'].value_counts()
-bad_list = bad_list[bad_list >= 3].reset_index()
-bad_list.columns = ['Mã Máy', 'Số lần hỏng trong kỳ']
-st.dataframe(bad_list, use_container_width=True)
-
-with st.expander("📋 Xem toàn bộ nhật ký kỳ này"):
-    st.dataframe(df_filtered[['MÃ_MÁY', 'VÙNG_MIỀN', 'LÝ_DO_HỎNG', 'NGAY_FIX']].tail(100), use_container_width=True)
+with col_right:
+    st.subheader("📍 Tỷ lệ lỗi theo khu vực")
+    vung_data = df_filtered['VÙNG_MIỀN'].value_counts().reset_index()
+    fig_pie = px.pie(vung_data, values='count', names='VÙNG_MIỀN', hole=0.5,
