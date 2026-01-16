@@ -125,3 +125,15 @@ with col_right:
     st.subheader("📍 Tỷ lệ lỗi theo khu vực")
     vung_data = df_filtered['VÙNG_MIỀN'].value_counts().reset_index()
     fig_pie = px.pie(vung_data, values='count', names='VÙNG_MIỀN', hole=0.5,
+                    color_discrete_map={"Miền Nam": "#28a745", "Miền Bắc": "#007bff", "Miền Trung": "#ffc107"})
+    st.plotly_chart(fig_pie, use_container_width=True)
+
+# 4. DANH SÁCH "ĐEN"
+st.subheader("🚨 Danh sách tài sản lỗi lặp lại cao (>= 3 lần)")
+bad_machines = df_filtered['MÃ_MÁY'].value_counts()
+bad_machines = bad_machines[bad_machines >= 3].reset_index()
+bad_machines.columns = ['Mã Máy', 'Số lần hỏng']
+st.dataframe(bad_machines, use_container_width=True)
+
+with st.expander("📋 Nhật ký sửa chữa chi tiết (Kỳ báo cáo)"):
+    st.dataframe(df_filtered[['MÃ_MÁY', 'VÙNG_MIỀN', 'LÝ_DO_HỎNG', 'NGAY_FIX']].tail(100), use_container_width=True)
