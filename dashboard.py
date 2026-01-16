@@ -152,3 +152,36 @@ bad_machines = df_filtered['MÃ_MÁY'].value_counts()
 bad_machines = bad_machines[bad_machines >= 3].reset_index()
 bad_machines.columns = ['Mã Máy', 'Số lần hỏng']
 st.dataframe(bad_machines, use_container_width=True)
+# --- BẢNG PHÂN TÍCH MÁY HỎNG BÍ ẨN ---
+st.divider()
+st.subheader("🚩 Top 10 Máy hỏng bí ẩn (Cần kiểm tra chuyên sâu)")
+
+# Định nghĩa các từ khóa "bí ẩn" thường gặp trong dữ liệu
+mystery_keywords = ['không rõ', 'chưa xác định', 'lỗi lạ', 'kiểm tra', 'theo dõi', 'hỏng chưa rõ']
+
+# Lọc các máy có lý do hỏng chứa từ khóa bí ẩn
+df_mystery = df[df['LÝ_DO_HỎNG'].str.lower().str.contains('|'.join(mystery_keywords), na=False)]
+
+if not df_mystery.empty:
+    # Đếm số lần hỏng của những máy này
+    mystery_counts = df_mystery['MÃ_MÁY'].value_counts().reset_index()
+    mystery_counts.columns = ['Mã Máy', 'Số lần hỏng "bí ẩn"']
+    
+    # Lấy Top 10
+    top_10_mystery = mystery_counts.head(10)
+    
+    # Hiển thị bảng kèm chú thích chuyên gia
+    col_tab, col_note = st.columns([7, 3])
+    
+    with col_tab:
+        st.dataframe(top_10_mystery, use_container_width=True)
+        
+    with col_note:
+        st.info("""
+        **💡 Khuyến nghị của AI:**
+        Các máy trong danh sách này đang có 'bệnh lý' không rõ ràng nhưng lặp lại. 
+        - Sếp nên yêu cầu kỹ thuật viên lập biên bản kiểm tra tổng thể.
+        - Ưu tiên thay thế linh kiện thay vì sửa vá để tránh gián đoạn công việc.
+        """)
+else:
+    st.success("✅ Tuyệt vời sếp ơi! Hiện chưa ghi nhận máy nào có lỗi 'bí ẩn' trong kỳ này.")
