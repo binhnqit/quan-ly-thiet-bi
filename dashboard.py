@@ -1,20 +1,24 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import time
 
-st.set_page_config(page_title="Hệ thống Quản trị Thiết bị Pro", layout="wide")
+st.set_page_config(page_title="Hệ thống Quản lý Laptop Toàn Quốc", layout="wide")
 
-# Link xuất dữ liệu sạch nhất
+# Link ID gốc của sếp
 SHEET_ID = "16eiLNG46MCmS5GeETnotXW5GyNtvKNYBh_7Zk7IJRfA"
-URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
-@st.cache_data(ttl=1)
-def load_data_final_fix():
+@st.cache_data(ttl=5) # Cache cực ngắn để cập nhật liên tục
+def load_data_full_sync():
     try:
-        # Bỏ qua 2 dòng đầu để tránh tiêu đề gộp ô to
-        df = pd.read_csv(URL, skiprows=2)
+        # THỦ THUẬT QUAN TRỌNG: Thêm biến thời gian để ép Google nhả dữ liệu mới nhất (vượt qua dòng 2521)
+        timestamp = int(time.time())
+        URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&tq&cachebust={timestamp}"
         
-        # --- FIX LỖI DUPLICATE COLUMN ---
+        # Đọc dữ liệu thô
+        df = pd.read_csv(URL)
+        
+        # 1. XỬ LÝ TRÙNG TÊN CỘT (Triệt tiêu lỗi ValueError)
         new_cols = []
         counts = {}
         for i, col in enumerate(df.columns):
@@ -28,10 +32,10 @@ def load_data_final_fix():
                 new_cols.append(c_name)
         df.columns = new_cols
 
-        # --- DÙNG TỌA ĐỘ CỨNG ĐỂ LẤY DỮ LIỆU ---
-        # Cột B (index 1) là Mã Máy, Cột F (index 5) là Chi Nhánh
-        col_ma = df.columns[1] 
+        # 2. TÌM DỮ LIỆU TẠI CỘT F (Index 5) - Nơi chứa Miền Nam
+        # Dựa trên image_04f587, chúng ta cần lùng sục kỹ cột này
         col_kv = df.columns[5] 
+        col_ma = df.columns[1] 
 
         def standardize_region(val):
             v = str(val).strip().upper()
@@ -43,52 +47,54 @@ def load_data_final_fix():
         df['VÙNG MIỀN'] = df[col_kv].apply(standardize_region)
         df['MÃ MÁY'] = df[col_ma].astype(str).str.split('.').str[0]
         
-        # Lọc bỏ dòng trống
+        # Chỉ lấy những dòng thực sự có dữ liệu máy
         df = df[df['MÃ MÁY'] != 'nan']
         
         return df, col_kv
     except Exception as e:
-        st.error(f"Đang đồng bộ... ({e})")
+        st.error(f"Lỗi kết nối: {e}")
         return pd.DataFrame(), None
 
-df, real_col_name = load_data_final_fix()
+df, real_col = load_data_full_sync()
 
 st.title("🛡️ Dashboard Quản trị Thiết bị Pro")
 
 if not df.empty:
     # Sidebar
-    regions = ["Miền Bắc", "Miền Trung", "Miền Nam", "Chưa xác định"]
-    selected = st.sidebar.multiselect("📍 Chọn Miền", regions, default=[r for r in regions if r in df['VÙNG MIỀN'].unique()])
+    vung_mien = ["Miền Bắc", "Miền Trung", "Miền Nam", "Chưa xác định"]
+    selected = st.sidebar.multiselect("📍 Chọn Miền hiển thị", vung_mien, default=vung_mien)
     
     df_filtered = df[df['VÙNG MIỀN'].isin(selected)]
 
     # KPIs
     c1, c2, c3 = st.columns(3)
-    c1.metric("Tổng lượt lỗi", len(df_filtered))
-    c2.metric("Số máy hỏng", df_filtered['MÃ MÁY'].nunique())
+    # Tổng lượt lỗi giờ đây phải > 3000
+    c1.metric("Tổng lượt lỗi thực tế", len(df_filtered))
+    c2.metric("Số máy khác nhau", df_filtered['MÃ MÁY'].nunique())
     
-    # Kiểm tra riêng Miền Nam
+    # Số ca Miền Nam
     val_mn = len(df[df['VÙNG MIỀN'] == 'Miền Nam'])
-    c3.metric("Số ca Miền Nam", val_mn, delta="Đã nhận" if val_mn > 0 else "Cần check ô màu xanh")
+    c3.metric("Số ca Miền Nam", val_mn, delta="Mới cập nhật" if val_mn > 0 else "Kiểm tra dòng 3000+")
 
     st.divider()
 
-    # Biểu đồ gộp màu theo image_03af91
+    # Biểu đồ theo màu image_03af91
     if not df_filtered.empty:
-        chart_df = df_filtered['VÙNG MIỀN'].value_counts().reset_index()
-        chart_df.columns = ['Vùng', 'Số lượng']
-        fig = px.bar(chart_df, x='Vùng', y='Số lượng', color='Vùng', text_auto=True,
+        chart_data = df_filtered['VÙNG MIỀN'].value_counts().reset_index()
+        chart_data.columns = ['Vùng', 'Số lượng']
+        fig = px.bar(chart_data, x='Vùng', y='Số lượng', color='Vùng', text_auto=True,
                      color_discrete_map={
-                         "Miền Bắc": "#8B0000",   # Đỏ đậm
-                         "Miền Trung": "#DEB887", # Vàng nâu
-                         "Miền Nam": "#006400"    # Xanh lá đậm
+                         "Miền Bắc": "#007bff", 
+                         "Miền Trung": "#ffc107", 
+                         "Miền Nam": "#28a745"
                      })
         st.plotly_chart(fig, use_container_width=True)
 
-    # PHẦN QUAN TRỌNG: SOI DỮ LIỆU
-    with st.expander("🔍 Soi dữ liệu thô (Dành cho sếp)"):
-        st.write(f"Đang bốc dữ liệu tại cột F: **{real_col_name}**")
-        st.dataframe(df[['MÃ MÁY', 'VÙNG MIỀN', real_col_name]].tail(50))
+    # PHẦN QUAN TRỌNG: XÁC MINH DÒNG 3647
+    with st.expander("🔍 Soi dữ liệu dòng cuối (Kiểm tra mốc 3647)"):
+        st.write(f"Tổng số dòng App đọc được: **{len(df)}**")
+        st.write("Dưới đây là dữ liệu mới nhất ở cuối file:")
+        st.dataframe(df[['MÃ MÁY', 'VÙNG MIỀN', real_col]].tail(100))
 
 else:
-    st.info("Sếp đợi vài giây để dữ liệu tải về nhé...")
+    st.warning("Đang chờ Google nhả dữ liệu mới... Sếp nhấn F5 sau 5 giây nhé!")
