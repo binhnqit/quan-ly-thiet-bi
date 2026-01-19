@@ -3,19 +3,19 @@ import pandas as pd
 import plotly.express as px
 
 # 1. CẤU HÌNH GIAO DIỆN
-st.set_page_config(page_title="Hệ Thống Quản Trị AI - V23", layout="wide")
+st.set_page_config(page_title="Hệ Thống Quản Trị AI - V24", layout="wide")
 
-# 2. LINK DỮ LIỆU CHUẨN (CẬP NHẬT 3.651 DÒNG)
+# 2. LINK DỮ LIỆU CHUẨN TỪ GOOGLE SHEETS
 DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
 @st.cache_data(ttl=5)
-def load_data_v23():
+def load_data_v24():
     try:
         # Ép kiểu string và thêm cache_bust để cập nhật dữ liệu mới nhất
         raw_df = pd.read_csv(f"{DATA_URL}&cache={pd.Timestamp.now().timestamp()}", dtype=str)
         
         df = pd.DataFrame()
-        # Ép tọa độ cột chuẩn: B=Mã Máy, D=Lý do, G=Ngày sửa
+        # Ép tọa độ cột: B=Mã Máy, D=Lý do, G=Ngày sửa
         df['MÃ_MÁY'] = raw_df.iloc[:, 1].str.split('.').str[0].str.strip()
         df['LÝ_DO'] = raw_df.iloc[:, 3].fillna("Chưa rõ")
         df['NGAY_FIX'] = pd.to_datetime(raw_df.iloc[:, 6], errors='coerce', dayfirst=True)
@@ -35,7 +35,7 @@ def load_data_v23():
         st.error(f"Lỗi kết nối dữ liệu: {e}")
         return pd.DataFrame()
 
-df_all = load_data_v23()
+df_all = load_data_v24()
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -72,7 +72,8 @@ if not df_all.empty:
         cl, cr = st.columns(2)
         with cl:
             st.subheader("📍 Phân bổ hỏng theo Miền")
-            st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.4), use_container_width=True)
+            fig_pie = px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.4)
+            st.plotly_chart(fig_pie, use_container_width=True)
         with cr:
             st.subheader("🛠️ Loại linh kiện thay thế")
             def classify_lk(x):
@@ -82,7 +83,7 @@ if not df_all.empty:
                 if 'phím' in x: return 'Bàn phím'
                 if 'main' in x: return 'Mainboard'
                 if 'sạc' in x or 'adapter' in x: return 'Sạc/Adapter'
-                return 'Linh kiện khác'
+                return 'Khác'
             df_filtered['LK'] = df_filtered['LÝ_DO'].apply(classify_lk)
             st.plotly_chart(px.bar(df_filtered['LK'].value_counts().reset_index(), x='count', y='LK', orientation='h'), use_container_width=True)
 
@@ -90,6 +91,30 @@ if not df_all.empty:
         st.subheader("💬 Tra cứu hồ sơ máy (Live)")
         q = st.text_input("Gõ mã máy để AI quét lịch sử:")
         if q:
+            # Lọc dữ liệu mã máy
             res = df_all[df_all['MÃ_MÁY'].str.contains(q, na=False, case=False)].sort_values('NGAY_FIX', ascending=False)
             if not res.empty:
-                st.success(f"Máy {q} đã sửa {len(
+                # SỬA LỖI CÚ PHÁP TẠI ĐÂY
+                st.success(f"Máy {q} đã sửa {len(res)} lần.")
+                st.dataframe(res[['NGAY_FIX', 'LÝ_DO', 'VÙNG_MIỀN']], use_container_width=True)
+            else:
+                st.warning("Mã máy không có trong dữ liệu hỏng.")
+
+    with tab4:
+        st.header("🚩 Danh sách đen (Hỏng >= 4 lần)")
+        report = df_all.groupby('MÃ_MÁY').agg(
+            Lượt_hỏng=('LÝ_DO', 'count'),
+            Bệnh_nền=('LÝ_DO', lambda x: x.mode().iloc[0] if not x.mode().empty else "Đa bệnh"),
+            Khu_vực=('VÙNG_MIỀN', 'first')
+        ).reset_index()
+        st.dataframe(report[report['Lượt_hỏng'] >= 4].sort_values('Lượt_hỏng', ascending=False), use_container_width=True, hide_index=True)
+
+    with tab3:
+        st.markdown("""
+        ### 📖 HƯỚNG DẪN VẬN HÀNH 2026
+        - **Cập nhật:** Nhấn nút 'Cập nhật dữ liệu mới' nếu sếp vừa sửa file Sheets.
+        - **Tra cứu:** Chatbot tự động quét toàn bộ 3.651 dòng để tìm lịch sử máy.
+        - **Quyết định:** Dựa vào 'Bệnh nền' ở Tab 4 để quyết định thanh lý máy hỏng hệ thống.
+        """)
+else:
+    st.warning("Đang kết nối dữ liệu 3.651 dòng. Vui lòng nhấn 'Cập nhật' ở Sidebar.")
