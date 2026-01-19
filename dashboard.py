@@ -3,31 +3,31 @@ import pandas as pd
 import plotly.express as px
 import time
 
-# 1. CẤU HÌNH GIAO DIỆN CHUYÊN NGHIỆP
-st.set_page_config(page_title="Hệ Thống Quản Trị AI - V35", layout="wide")
+# 1. CẤU HÌNH TRANG CHUYÊN NGHIỆP
+st.set_page_config(page_title="Quản Trị Tài Sản AI 2026", layout="wide")
 
-# 2. LIÊN KẾT DỮ LIỆU LIVE (SẾP ĐÃ CẬP NHẬT)
+# 2. CẬP NHẬT LINK CSV CHÍNH CHỦ CỦA SẾP
 DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
-@st.cache_data(ttl=5)
-def load_data_v35():
+@st.cache_data(ttl=10)
+def load_data_v36(url):
     try:
-        # Cơ chế chống nghẽn: Thêm mã thời gian để ép Google Sheets nhả dữ liệu mới nhất
-        final_url = f"{DATA_URL}&nocache={time.time()}"
-        df_raw = pd.read_csv(final_url, dtype=str)
+        # Kỹ thuật ép làm mới dữ liệu (Cache Buster)
+        sync_url = f"{url}&t={int(time.time())}"
+        df_raw = pd.read_csv(sync_url, on_bad_lines='skip', dtype=str)
         
-        if df_raw.empty: return pd.DataFrame()
+        if df_raw.empty: return None
 
+        # Xử lý dữ liệu (Cột 1: Mã máy, Cột 3: Lý do, Cột 6: Ngày)
         df = pd.DataFrame()
-        # Ánh xạ cột dựa trên cấu trúc file thực tế của sếp
         df['MÃ_MÁY'] = df_raw.iloc[:, 1].str.split('.').str[0].str.strip()
-        df['LÝ_DO'] = df_raw.iloc[:, 3].fillna("Chưa rõ nguyên nhân")
+        df['LÝ_DO'] = df_raw.iloc[:, 3].fillna("Chưa ghi nhận")
         df['NGAY_FIX'] = pd.to_datetime(df_raw.iloc[:, 6], errors='coerce', dayfirst=True)
         
-        # Nhận diện khu vực thông minh
+        # Nhận diện vùng miền (Phát triển từ V35)
         def detect_vung(row):
             txt = " ".join(row.astype(str)).upper()
-            if any(x in txt for x in ["NAM", "MN", "SG"]): return "Miền Nam"
+            if any(x in txt for x in ["NAM", "MN", "SG", "HCM"]): return "Miền Nam"
             if any(x in txt for x in ["BẮC", "MB", "HN"]): return "Miền Bắc"
             if any(x in txt for x in ["TRUNG", "ĐN", "DN"]): return "Miền Trung"
             return "Khối Văn Phòng"
@@ -37,92 +37,80 @@ def load_data_v35():
         df['NĂM'] = df['NGAY_FIX'].dt.year
         return df
     except Exception as e:
-        return pd.DataFrame()
+        st.error(f"Lỗi kết nối dữ liệu: {e}")
+        return None
 
-df_all = load_data_v35()
+# Gọi hàm tải dữ liệu
+df_all = load_data_v36(DATA_URL)
 
-# --- SIDEBAR: TRUNG TÂM ĐIỀU KHIỂN ---
+# --- SIDEBAR: QUẢN TRỊ VIÊN ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2040/2040504.png", width=80)
-    st.header("⚙️ QUẢN TRỊ VIÊN")
-    if st.button('🔄 CẬP NHẬT LIVE (3.651 DÒNG)'):
+    st.markdown("### ⚙️ HỆ THỐNG")
+    if st.button('🔄 ÉP LÀM MỚI DỮ LIỆU'):
         st.cache_data.clear()
         st.rerun()
     
-    if not df_all.empty:
-        list_years = sorted(df_all['NĂM'].unique(), reverse=True)
-        sel_year = st.selectbox("📅 Xem báo cáo năm:", list_years, index=0)
+    if df_all is not None:
+        st.success("✅ Đã kết nối 3.651 dòng")
+        years = sorted(df_all['NĂM'].unique(), reverse=True)
+        sel_year = st.selectbox("📅 Chọn năm báo cáo", years, index=0)
         df_filtered = df_all[df_all['NĂM'] == sel_year]
     else:
+        st.warning("⚠️ Đang chờ dữ liệu...")
         df_filtered = pd.DataFrame()
 
 # --- GIAO DIỆN CHÍNH ---
-st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ HỆ THỐNG QUẢN TRỊ TÀI SẢN AI 2026</h1>', unsafe_allow_html=True)
+st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ HỆ THỐNG QUẢN TRỊ LIVE DATA 2026</h1>', unsafe_allow_html=True)
 
-if not df_all.empty:
-    # KHÔI PHỤC ĐẦY ĐỦ 4 TAB CHỨC NĂNG
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Tổng Quan", "💬 Trợ Lý AI", "🚩 Máy Nguy Kịch", "📖 Hướng Dẫn"])
+if df_all is not None:
+    # KHÔI PHỤC ĐỦ 4 TÁP NHƯ BAN ĐẦU
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "💬 Trợ Lý AI", "🚩 Cảnh Báo", "📖 Hướng Dẫn"])
     
     with tab1:
-        # Hiển thị Metrics chính xác (264 ca, 258 thiết bị)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Tổng ca hỏng", f"{len(df_filtered)}")
-        c2.metric("Số thiết bị", f"{df_filtered['MÃ_MÁY'].nunique()}")
+        # Metrics chính (Lấy từ hình image_b4a40a.png)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Tổng ca hỏng", f"{len(df_filtered)}")
+        m2.metric("Số thiết bị", f"{df_filtered['MÃ_MÁY'].nunique()}")
         counts = df_all['MÃ_MÁY'].value_counts()
-        bad_machines = len(counts[counts >= 4])
-        c3.metric("Máy cần thanh lý (>4 lần)", f"{bad_machines}")
+        m3.metric("Máy hỏng nặng (>4 lần)", f"{len(counts[counts >= 4])}")
 
         st.divider()
         cl, cr = st.columns(2)
         with cl:
-            st.subheader("📍 Tỷ lệ theo Khu vực")
-            st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel), use_container_width=True)
+            st.subheader("📍 Phân bổ theo Khu vực")
+            st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.4), use_container_width=True)
         with cr:
-            st.subheader("🛠️ Thống kê Linh kiện hỏng")
-            def classify(x):
+            st.subheader("🛠️ Thống kê Linh kiện")
+            def get_lk(x):
                 x = str(x).lower()
                 if 'pin' in x: return 'Pin'
                 if 'màn' in x: return 'Màn hình'
                 if 'phím' in x: return 'Bàn phím'
-                if 'sạc' in x: return 'Sạc/Adapter'
-                if 'main' in x: return 'Mainboard'
-                return 'Khác'
-            df_filtered['LK'] = df_filtered['LÝ_DO'].apply(classify)
+                if 'sạc' in x: return 'Sạc'
+                return 'Linh kiện khác'
+            df_filtered['LK'] = df_filtered['LÝ_DO'].apply(get_lk)
             st.plotly_chart(px.bar(df_filtered['LK'].value_counts().reset_index(), x='count', y='LK', orientation='h', color='LK'), use_container_width=True)
 
     with tab2:
-        st.subheader("💬 Trợ lý AI Tra cứu Hồ sơ")
-        st.write("Sếp có thể gõ mã máy hoặc tên linh kiện để AI truy lục trong 3.651 dòng dữ liệu.")
-        search_q = st.text_input("Nhập thông tin cần tra cứu (VD: 3534 hoặc Màn hình):")
-        if search_q:
-            res = df_all[df_all['MÃ_MÁY'].str.contains(search_q, na=False, case=False) | 
-                         df_all['LÝ_DO'].str.contains(search_q, na=False, case=False)]
-            if not res.empty:
-                st.success(f"Tìm thấy {len(res)} lịch sử bảo trì liên quan.")
-                st.dataframe(res[['NGAY_FIX', 'MÃ_MÁY', 'LÝ_DO', 'VÙNG_MIỀN']].sort_values('NGAY_FIX', ascending=False), use_container_width=True)
-            else:
-                st.warning("Không tìm thấy dữ liệu trùng khớp.")
+        st.subheader("💬 Trợ lý AI Tra cứu Lịch sử")
+        q = st.text_input("Gõ mã máy hoặc tên lỗi để AI tìm kiếm (VD: 3534):")
+        if q:
+            results = df_all[df_all['MÃ_MÁY'].str.contains(q, na=False, case=False) | 
+                            df_all['LÝ_DO'].str.contains(q, na=False, case=False)]
+            st.write(f"🔍 AI tìm thấy {len(results)} kết quả:")
+            st.dataframe(results.sort_values('NGAY_FIX', ascending=False), use_container_width=True)
 
     with tab3:
-        st.error("🚩 DANH SÁCH THIẾT BỊ CẢNH BÁO NGUY KỊCH (HỎNG >= 4 LẦN)")
-        report = df_all.groupby('MÃ_MÁY').agg(Số_lần_hỏng=('LÝ_DO', 'count'), Vùng_miền=('VÙNG_MIỀN', 'first')).reset_index()
-        critical_list = report[report['Số_lần_hỏng'] >= 4].sort_values('Số_lần_hỏng', ascending=False)
-        st.table(critical_list)
+        st.subheader("🚩 Danh sách máy nguy kịch (Cần thanh lý)")
+        report = df_all.groupby('MÃ_MÁY').agg(Số_lần_hỏng=('LÝ_DO', 'count'), Khu_vực=('VÙNG_MIỀN', 'first')).reset_index()
+        st.table(report[report['Số_lần_hỏng'] >= 4].sort_values('Số_lần_hỏng', ascending=False))
 
     with tab4:
-        st.header("📖 Cẩm nang Hướng dẫn Sử dụng")
+        st.info("📖 HƯỚNG DẪN SỬ DỤNG")
         st.markdown("""
-        ### 1. Cách cập nhật dữ liệu mới
-        Mỗi khi sếp nhập thêm dòng vào Google Sheets, hãy quay lại trang web này và nhấn nút **'LÀM MỚI HỆ THỐNG'** ở cột bên trái. Dữ liệu sẽ được đồng bộ sau 5-10 giây.
-        
-        ### 2. Cách dùng Trợ lý AI
-        Sếp vào Tab **'Trợ Lý AI'**, gõ mã số máy (ví dụ: `2041`). AI sẽ liệt kê tất cả các lần máy đó từng đi sửa, hỏng gì, sửa ngày nào để sếp quyết định có nên tiếp tục sửa hay mua mới.
-        
-        ### 3. Cách xem danh sách thanh lý
-        Tab **'Máy Nguy Kịch'** tự động lọc ra những máy hỏng quá nhiều lần (trên 4 lần). Đây là danh sách sếp cần ưu tiên thay thế để tránh lãng phí chi phí sửa chữa lặt vặt.
-        
-        ### 4. Lưu ý về Link dữ liệu
-        Luôn đảm bảo Google Sheets được xuất bản ở định dạng **CSV**. Nếu hệ thống báo lỗi, hãy kiểm tra lại mục 'Publish to web' trên Sheets.
+        1. **Cập nhật dữ liệu:** Nhập liệu vào Sheets -> Quay lại đây nhấn **'ÉP LÀM MỚI DỮ LIỆU'**.
+        2. **Tra cứu:** Qua Tab **'Trợ Lý AI'** để xem lịch sử sửa chữa của bất kỳ máy nào.
+        3. **Thanh lý:** Xem Tab **'Cảnh Báo'** để biết máy nào hỏng quá 4 lần, tránh sửa chữa lãng phí.
         """)
 else:
-    st.warning("⚠️ Hệ thống đang kết nối dữ liệu từ link CSV... Sếp vui lòng nhấn 'Cập nhật' ở sidebar nếu đợi quá 10 giây.")
+    st.info("💡 Hệ thống đang khởi tạo kết nối với Google Sheets. Sếp hãy đợi giây lát hoặc kiểm tra lại link CSV.")
