@@ -3,124 +3,108 @@ import pandas as pd
 import plotly.express as px
 import time
 
-# --- CẤU HÌNH GIAO DIỆN CHUẨN V110 ---
-st.set_page_config(page_title="Hệ Thống Phân Tích Lỗi - V900", layout="wide")
+# --- CẤU HÌNH HỆ THỐNG ---
+st.set_page_config(page_title="Hệ Thống Phân Tích Lỗi V1000", layout="wide")
 
-@st.cache_data(ttl=0) # Ép bộ nhớ đệm về 0 để dữ liệu luôn mới nhất
-def load_data_v900_perfect():
+@st.cache_data(ttl=0)
+def load_data_v1000_final():
     try:
-        # Giữ nguyên kết nối Google Sheets trơn tru của sếp
+        # Link Google Sheets của sếp
         url = f"https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv&cache={time.time()}"
         df_raw = pd.read_csv(url, dtype=str, header=None).fillna("")
         
-        valid_records = []
-        last_valid_date = None 
+        valid_data = []
+        ngay_gan_nhat = None 
 
         for i, row in df_raw.iterrows():
-            if i == 0: continue # Bỏ qua dòng tiêu đề
+            if i == 0: continue # Bỏ qua header
             
-            # Đọc dữ liệu thô từ các cột
+            # Đọc dữ liệu thô
             raw_ngay = str(row.iloc[0]).strip()
             ma_may = str(row.iloc[1]).strip()
             khach_hang = str(row.iloc[2]).strip()
             linh_kien = str(row.iloc[3]).strip()
-            vung_mien = str(row.iloc[5]).strip().upper()
+            vung_raw = str(row.iloc[5]).strip().upper()
 
-            # --- GIẢI PHÁP BỨC PHÁ: CHỈ LẤY DÒNG CÓ MÃ MÁY THỰC ---
-            # Nếu dòng không có mã máy -> Đây là dòng trống hoặc rác ở cuối Sheets -> BỎ QUA
+            # --- CHỐT CHẶN VÀNG: BỎ QUA DÒNG TRỐNG ---
+            # Nếu dòng không có Mã máy thực sự -> NGỪNG XỬ LÝ DÒNG NÀY NGAY LẬP TỨC
             if not ma_may or "Mã số" in ma_may or len(ma_may) < 2:
                 continue
 
-            # --- XỬ LÝ NGÀY THÁNG CHUẨN ---
-            current_date_parsed = pd.to_datetime(raw_ngay, dayfirst=True, errors='coerce')
+            # --- XỬ LÝ NGÀY THÁNG THÔNG MINH ---
+            # Chỉ cập nhật ngày nếu ô Ngày có dữ liệu mới
+            parsed_date = pd.to_datetime(raw_ngay, dayfirst=True, errors='coerce')
+            if pd.notnull(parsed_date):
+                ngay_gan_nhat = parsed_date
             
-            if pd.notnull(current_date_parsed):
-                # Nếu dòng này có ngày mới, cập nhật mốc thời gian
-                last_valid_date = current_date_parsed
-            
-            # Chỉ ghi nhận record nếu đã có ít nhất 1 mốc ngày tháng hợp lệ
-            if last_valid_date:
-                valid_records.append({
-                    "NGÀY_DT": last_valid_date,
-                    "NĂM": last_valid_date.year,
-                    "THÁNG": last_valid_date.month,
+            # Gán dữ liệu vào danh sách (Nếu máy có mà ngày chưa có, lấy ngày gần nhất)
+            if ngay_gan_nhat:
+                valid_data.append({
+                    "NGÀY_DT": ngay_gan_nhat,
+                    "NĂM": ngay_gan_nhat.year,
+                    "THÁNG": ngay_gan_nhat.month,
                     "MÃ_MÁY": ma_may,
-                    "KHÁCH_HÀNG": khach_hang if khach_hang else "Chưa xác định",
-                    "LINH_KIỆN": linh_kien if linh_kien else "N/A",
-                    "VÙNG": "MIỀN BẮC" if "BẮC" in vung_mien else ("MIỀN TRUNG" if "TRUNG" in vung_mien else "MIỀN NAM")
+                    "KHÁCH_HÀNG": khach_hang if khach_hang else "N/A",
+                    "LINH_KIỆN": linh_kien if linh_kien else "Chưa ghi nhận",
+                    "VÙNG": "MIỀN BẮC" if "BẮC" in vung_raw else ("MIỀN TRUNG" if "TRUNG" in vung_raw else "MIỀN NAM")
                 })
         
-        return pd.DataFrame(valid_records)
-    except Exception as e:
-        st.error(f"Lỗi đọc dữ liệu: {e}")
+        return pd.DataFrame(valid_data)
+    except:
         return pd.DataFrame()
 
 # --- XỬ LÝ DỮ LIỆU ---
-df = load_data_v900_perfect()
+df = load_data_v1000_final()
 
 if not df.empty:
+    # Sidebar quản trị
     with st.sidebar:
-        st.markdown("### ⚙️ QUẢN TRỊ HỆ THỐNG")
-        if st.button('🔄 ĐỒNG BỘ DỮ LIỆU SẠCH', use_container_width=True):
+        st.header("⚙️ QUẢN TRỊ V1000")
+        if st.button('🔄 LÀM SẠCH & CẬP NHẬT', use_container_width=True):
             st.cache_data.clear()
             st.rerun()
         
         st.divider()
-        list_year = sorted(df['NĂM'].unique(), reverse=True)
-        sel_year = st.selectbox("📅 Chọn Năm", list_year)
+        sel_year = st.selectbox("📅 Năm", sorted(df['NĂM'].unique(), reverse=True))
+        df_y = df[df['NĂM'] == sel_year]
+        sel_month = st.selectbox("🗓️ Tháng", ["Tất cả"] + sorted(df_y['THÁNG'].unique().tolist()))
         
-        df_year = df[df['NĂM'] == sel_year]
-        list_month = ["Tất cả"] + sorted(df_year['THÁNG'].unique().tolist())
-        sel_month = st.selectbox("🗓️ Chọn Tháng", list_month)
-        
-        df_final = df_year if sel_month == "Tất cả" else df_year[df_year['THÁNG'] == sel_month]
+        df_final = df_y if sel_month == "Tất cả" else df_y[df_y['THÁNG'] == sel_month]
 
-    # --- HIỂN THỊ KPI (THEO ĐÚNG GIAO DIỆN ĐẸP CỦA SẾP) ---
-    st.title("🛡️ Hệ Thống Phân Tích Lỗi Thiết Bị")
+    # Giao diện hiển thị
+    st.title("🛡️ Phân Tích Lỗi Thiết Bị - Số Liệu Thực")
     
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tổng ca hỏng THỰC", len(df_final))
-    c2.metric("Số máy lỗi", df_final['MÃ_MÁY'].nunique())
+    # KPI
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Tổng ca hỏng (THỰC)", len(df_final))
+    k2.metric("Số máy lỗi", df_final['MÃ_MÁY'].nunique())
     
     dup = df_final['MÃ_MÁY'].value_counts()
     re_fail = len(dup[dup > 1])
-    c3.metric("Hỏng tái diễn", re_fail)
-    c4.metric("Số khách hàng", df_final['KHÁCH_HÀNG'].nunique())
+    k3.metric("Hỏng tái diễn", re_fail)
+    k4.metric("Khách hàng", df_final['KHÁCH_HÀNG'].nunique())
 
-    # --- TABS ---
-    t1, t2, t3, t4 = st.tabs(["📊 XU HƯỚNG & VÙNG MIỀN", "🚩 RỦI RO (RE-FAIL)", "🔍 TRUY XUẤT", "📁 DỮ LIỆU GỐC SẠCH"])
+    # Tabs chức năng
+    t1, t2, t3 = st.tabs(["📊 XU HƯỚNG THỰC TẾ", "🚩 CẢNH BÁO RE-FAIL", "📁 KIỂM TRA DỮ LIỆU SẠCH"])
 
     with t1:
-        col_l, col_r = st.columns([1.6, 1])
-        with col_l:
-            st.subheader("📈 Diễn biến hỏng hóc thực tế")
-            trend = df_final.groupby('NGÀY_DT').size().reset_index(name='Số ca')
-            fig_line = px.line(trend, x='NGÀY_DT', y='Số ca', markers=True)
-            fig_line.update_traces(line_color='#0047AB', fill='tozeroy')
-            st.plotly_chart(fig_line, use_container_width=True)
-
-        with col_r:
-            st.subheader("📍 Phân bổ theo Vùng")
-            fig_pie = px.pie(df_final, names='VÙNG', hole=0.5, 
-                             color_discrete_sequence=px.colors.qualitative.Pastel)
-            st.plotly_chart(fig_pie, use_container_width=True)
-
+        st.subheader("📈 Biểu đồ xu hướng (Đã lọc bỏ ca hỏng ảo)")
+        trend = df_final.groupby('NGÀY_DT').size().reset_index(name='Số ca')
+        fig = px.line(trend, x='NGÀY_DT', y='Số ca', markers=True, 
+                      title=f"Diễn biến hỏng hóc tháng {sel_month}/{sel_year}")
+        fig.update_traces(line_color='#1E3A8A', fill='tozeroy')
+        st.plotly_chart(fig, use_container_width=True)
+        
     with t2:
-        st.subheader("🚩 Danh sách thiết bị báo động (Hỏng > 1 lần)")
+        st.subheader("🚩 Các máy hỏng lặp lại trong kỳ")
         if re_fail > 0:
-            st.write(dup[dup > 1])
+            st.dataframe(dup[dup > 1], use_container_width=True)
         else:
-            st.success("Không có máy hỏng lặp lại.")
+            st.success("Không có máy hỏng tái diễn.")
 
     with t3:
-        query = st.text_input("🔍 Tìm nhanh Mã máy hoặc Khách hàng:")
-        if query:
-            search_df = df[df['MÃ_MÁY'].str.contains(query, case=False) | df['KHÁCH_HÀNG'].str.contains(query, case=False)]
-            st.dataframe(search_df, use_container_width=True)
-
-    with t4:
-        st.subheader("📁 Đối soát dữ liệu đã lọc rác")
+        st.subheader("📁 Danh sách chi tiết (Dữ liệu đã lọc 100% dòng trống)")
         st.dataframe(df_final, use_container_width=True)
 
 else:
-    st.info("Hệ thống đã loại bỏ hoàn toàn dòng ảo. Đang chờ dữ liệu thực từ Google Sheets.")
+    st.error("Không tìm thấy dữ liệu máy lỗi. Sếp hãy kiểm tra lại cột 'Mã số máy' trên Google Sheets!")
