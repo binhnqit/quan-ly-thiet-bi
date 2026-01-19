@@ -2,67 +2,70 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import time
+import re
 
-# --- SETUP CHUẨN APPLE STYLE ---
-st.set_page_config(page_title="Hệ Thống Phân Tích Lỗi - V1200", layout="wide")
+# --- CẤU HÌNH HỆ THỐNG ---
+st.set_page_config(page_title="Hệ Thống Phân Tích Lỗi V1300", layout="wide")
 
-@st.cache_data(ttl=0) # Không lưu cache lỗi, ép làm mới 100%
-def load_data_professional():
+@st.cache_data(ttl=0) # Vô hiệu hóa hoàn toàn cache để debug
+def load_data_ultra_clean():
     try:
-        # 1. Kết nối dữ liệu
-        url = f"https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv&cache={time.time()}"
+        # ÉP GOOGLE SHEETS CẬP NHẬT BẰNG CÁCH THÊM BIẾN TIME VÀO URL
+        timestamp = int(time.time())
+        url = f"https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv&gid=0&single=true&cachebuster={timestamp}"
+        
+        # Đọc dữ liệu
         df_raw = pd.read_csv(url, dtype=str, header=None).fillna("")
         
-        valid_records = []
-        anchor_date = None # Biến lưu giữ ngày tháng hiện tại
+        processed_data = []
+        current_date = None
+        rows_dropped = 0
 
-        # 2. Debug & Filter Loop
         for i, row in df_raw.iterrows():
-            if i == 0: continue # Bỏ qua header
+            if i == 0: continue # Bỏ qua tiêu đề
             
-            # Đọc thô và làm sạch khoảng trắng
-            raw_val_date = str(row.iloc[0]).strip()
+            raw_date = str(row.iloc[0]).strip()
             ma_may = str(row.iloc[1]).strip()
             khach_hang = str(row.iloc[2]).strip()
             linh_kien = str(row.iloc[3]).strip()
             vung_mien = str(row.iloc[5]).strip().upper()
 
-            # --- BƯỚC DEBUG QUAN TRỌNG NHẤT ---
-            # Chỉ cập nhật ngày tháng nếu ô đó thực sự có định dạng ngày
-            new_date = pd.to_datetime(raw_val_date, dayfirst=True, errors='coerce')
-            if pd.notnull(new_date):
-                anchor_date = new_date
+            # 1. CẬP NHẬT NGÀY THÁNG
+            temp_date = pd.to_datetime(raw_date, dayfirst=True, errors='coerce')
+            if pd.notnull(temp_date):
+                current_date = temp_date
 
-            # CHỐT CHẶN: Nếu không có Mã máy -> Dòng này vô giá trị (Rác Sheets)
-            # Chúng ta không cho phép dòng trống lọt vào danh sách
-            if not ma_may or "Mã số" in ma_may or len(ma_may) < 2:
+            # 2. BỘ LỌC TỐI THƯỢNG (BỨC PHÁ Ở ĐÂY)
+            # Một dòng CHỈ ĐƯỢC CHẤP NHẬN nếu Mã Máy có ít nhất 2 ký tự chữ/số
+            # Điều này loại bỏ 100% các dòng trống có định dạng ẩn ở cuối Sheets
+            if not ma_may or len(ma_may) < 2 or "Mã số" in ma_may:
+                rows_dropped += 1
                 continue
             
-            # CHỈ KHI CÓ MÃ MÁY VÀ ĐÃ CÓ NGÀY THÁNG THÌ MỚI LƯU
-            if anchor_date:
-                valid_records.append({
-                    "NGÀY_DT": anchor_date,
-                    "NĂM": anchor_date.year,
-                    "THÁNG": anchor_date.month,
+            # 3. GÁN DỮ LIỆU VÀO DANH SÁCH SẠCH
+            if current_date:
+                processed_data.append({
+                    "NGÀY": current_date,
+                    "NĂM": current_date.year,
+                    "THÁNG": current_date.month,
                     "MÃ_MÁY": ma_may,
                     "KHÁCH_HÀNG": khach_hang if khach_hang else "N/A",
-                    "LINH_KIỆN": linh_kien if linh_kien else "Chưa ghi nhận",
-                    "VÙNG": "MIỀN BẮC" if "BẮC" in vung_mien else ("MIỀN TRUNG" if "TRUNG" in vung_mien else "MIỀN NAM")
+                    "LINH_KIỆN": linh_kien if linh_kien else "Chưa rõ",
+                    "VÙNG": "BẮC" if "BẮC" in vung_mien else ("TRUNG" if "TRUNG" in vung_mien else "NAM")
                 })
         
-        return pd.DataFrame(valid_records)
+        return pd.DataFrame(processed_data), rows_dropped, len(df_raw)
     except Exception as e:
-        st.error(f"Lỗi hệ thống: {e}")
-        return pd.DataFrame()
+        st.error(f"Lỗi kết nối: {e}")
+        return pd.DataFrame(), 0, 0
 
-# --- KHỞI CHẠY VÀ HIỂN THỊ ---
-df = load_data_professional()
+# --- THI ĐẶT DỮ LIỆU ---
+df, dropped, total_raw = load_data_ultra_clean()
 
 if not df.empty:
-    # Sidebar
     with st.sidebar:
-        st.markdown("### 🛡️ QUẢN TRỊ V1200")
-        if st.button('🔄 ĐỒNG BỘ & LÀM SẠCH TRIỆT ĐỂ', use_container_width=True):
+        st.header("⚙️ CONTROL PANEL V1300")
+        if st.button('🔄 FORCE REFRESH (ÉP CẬP NHẬT)', use_container_width=True):
             st.cache_data.clear()
             st.rerun()
         
@@ -70,52 +73,50 @@ if not df.empty:
         sel_year = st.selectbox("📅 Năm", sorted(df['NĂM'].unique(), reverse=True))
         df_y = df[df['NĂM'] == sel_year]
         sel_month = st.selectbox("🗓️ Tháng", ["Tất cả"] + sorted(df_y['THÁNG'].unique().tolist()))
-        
         df_final = df_y if sel_month == "Tất cả" else df_y[df_y['THÁNG'] == sel_month]
 
-    # Dashboard chính
-    st.title("📊 Hệ Thống Phân Tích Lỗi Thiết Bị")
+    # --- GIAO DIỆN CHÍNH ---
+    st.title("🛡️ Hệ Thống Giám Sát Thiết Bị - Số Liệu Thực")
     
-    # KPI Blocks
+    # KPI - Số liệu thực tế sau khi đã lọc rác
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tổng ca hỏng (THỰC)", len(df_final))
-    c2.metric("Số thiết bị", df_final['MÃ_MÁY'].nunique())
+    c1.metric("Tổng ca hỏng", len(df_final))
+    c2.metric("Số máy lỗi", df_final['MÃ_MÁY'].nunique())
     
-    dup = df_final['MÃ_MÁY'].value_counts()
-    re_fail = len(dup[dup > 1])
-    c3.metric("Hỏng tái diễn", re_fail)
+    counts = df_final['MÃ_MÁY'].value_counts()
+    refail = len(counts[counts > 1])
+    c3.metric("Hỏng tái diễn", refail, delta_color="inverse")
     c4.metric("Khách hàng", df_final['KHÁCH_HÀNG'].nunique())
 
     # Tabs
-    t1, t2, t3 = st.tabs(["📈 BIỂU ĐỒ XU HƯỚNG", "🚩 QUẢN TRỊ RE-FAIL", "📁 DỮ LIỆU ĐÃ LỌC"])
+    t1, t2, t3 = st.tabs(["📊 BIỂU ĐỒ XU HƯỚNG", "🚩 CẢNH BÁO RE-FAIL", "🔍 DEBUG DỮ LIỆU"])
 
     with t1:
-        col_l, col_r = st.columns([2, 1])
-        with col_l:
-            st.subheader("Diễn biến hằng ngày")
-            trend = df_final.groupby('NGÀY_DT').size().reset_index(name='Số ca')
-            # Cấu hình biểu đồ sạch, không bị cột đứng ảo
-            fig = px.line(trend, x='NGÀY_DT', y='Số ca', markers=True)
-            fig.update_traces(line_color='#007AFF', fill='tozeroy') # Apple Blue
-            st.plotly_chart(fig, use_container_width=True)
-            
-
-        with col_r:
-            st.subheader("Tỷ lệ Vùng Miền")
-            fig_pie = px.pie(df_final, names='VÙNG', hole=0.6, 
-                             color_discrete_sequence=px.colors.qualitative.Prism)
-            st.plotly_chart(fig_pie, use_container_width=True)
+        st.subheader("📈 Diễn biến hỏng hóc (Dữ liệu đã làm sạch)")
+        trend = df_final.groupby('NGÀY').size().reset_index(name='Số ca')
+        # Biểu đồ đường của Apple Style: Sạch, rõ ràng, không có cột ảo
+        fig = px.line(trend, x='NGÀY', y='Số ca', markers=True, text='Số ca')
+        fig.update_traces(line_color='#007AFF', fill='tozeroy', textposition="top center")
+        st.plotly_chart(fig, use_container_width=True)
+        
 
     with t2:
-        st.subheader("Thiết bị hỏng trên 1 lần")
-        if re_fail > 0:
-            st.dataframe(dup[dup > 1], use_container_width=True)
+        st.subheader("🚩 Danh sách máy hỏng trên 1 lần")
+        if refail > 0:
+            st.table(counts[counts > 1])
         else:
-            st.success("Tình trạng thiết bị ổn định.")
+            st.success("Tuyệt vời! Không có máy nào hỏng tái diễn.")
 
     with t3:
-        st.subheader("Dữ liệu gốc (Đã loại bỏ 100% dòng trống)")
+        st.subheader("📁 Nhật ký lọc dữ liệu (Dành cho sếp kiểm tra)")
+        col_a, col_b, col_c = st.columns(3)
+        col_a.metric("Tổng dòng đọc được từ Sheets", total_raw)
+        col_b.metric("Số dòng rác đã loại bỏ", dropped)
+        col_c.metric("Số dòng dữ liệu thật", len(df))
+        
+        st.write("Dữ liệu sau khi xử lý:")
         st.dataframe(df_final, use_container_width=True)
 
 else:
-    st.warning("Hệ thống đã dọn sạch rác. Vui lòng nhập dữ liệu thực vào Sheets để bắt đầu.")
+    st.error("Hệ thống không tìm thấy dữ liệu hợp lệ. Sếp hãy chắc chắn đã nhập 'Mã số máy' vào Sheets.")
+    if st.button("Thử lại"): st.rerun()
