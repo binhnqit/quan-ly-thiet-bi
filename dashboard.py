@@ -62,4 +62,86 @@ def load_data_v165():
 
             final_rows.append([ngay_str, dt, thang, nam, ma_may, khach, lk, v_name])
 
-        return pd.DataFrame(final_rows, columns=['NGÀY', 'DT_OBJ', 'THÁNG', 'NĂM', 'MÃ_MÁY', 'KHÁCH_HÀNG
+        return pd.DataFrame(final_rows, columns=['NGÀY', 'DT_OBJ', 'THÁNG', 'NĂM', 'MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN', 'VÙNG'])
+    except Exception as e:
+        st.error(f"Lỗi nạp liệu: {e}")
+        return None
+
+data = load_data_v165()
+
+if data is not None:
+    # SIDEBAR
+    with st.sidebar:
+        st.header("⚙️ ĐIỀU KHIỂN")
+        if st.button('🔄 LÀM MỚI DỮ LIỆU', use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+        sel_y = st.selectbox("Năm", [2026, 2025])
+        sel_m = st.selectbox("Tháng", ["Tất cả"] + list(range(1, 13)))
+
+    # Lọc dữ liệu
+    df_final = data[data['NĂM'] == sel_y]
+    if sel_m != "Tất cả":
+        df_final = df_final[df_final['THÁNG'] == sel_m]
+
+    # --- GIAO DIỆN CHÍNH ---
+    st.markdown(f"### 📊 Báo Cáo Phân Tích Lỗi - {sel_m}/{sel_y}")
+    
+    # KPI SECTION (NGANG - GIỐNG HÌNH 2)
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Tổng ca hỏng", len(df_final))
+    k2.metric("Thiết bị lỗi", df_final['MÃ_MÁY'].nunique())
+    
+    re_counts = df_final['MÃ_MÁY'].value_counts()
+    re_fail_list = re_counts[re_counts > 1]
+    k3.metric("Hỏng tái diễn (>1)", len(re_fail_list))
+    k4.metric("Khách hàng báo lỗi", df_final['KHÁCH_HÀNG'].nunique())
+
+    st.write("---")
+
+    # BIỂU ĐỒ XU HƯỚNG & VÙNG MIỀN
+    tab1, tab2, tab3 = st.tabs(["📉 XU HƯỚNG & PHÂN BỔ", "🚩 DANH SÁCH ĐEN", "🔍 TRA CỨU"])
+
+    with tab1:
+        c1, c2 = st.columns([1.5, 1])
+        with c1:
+            st.subheader("📈 Xu hướng lỗi theo thời gian")
+            trend = df_final.groupby('NGÀY').size().reset_index(name='Số ca')
+            fig_line = px.line(trend, x='NGÀY', y='Số ca', markers=True, 
+                               color_discrete_sequence=['#1E3A8A'], template="plotly_white")
+            st.plotly_chart(fig_line, use_container_width=True)
+            
+            
+        with c2:
+            st.subheader("📍 Tỷ lệ Vùng Miền (Cột F)")
+            fig_pie = px.pie(df_final, names='VÙNG', hole=0.6,
+                             color_discrete_map={'MIỀN BẮC':'#1E3A8A', 'MIỀN NAM':'#3B82F6', 'MIỀN TRUNG':'#EF4444', 'KHÁC/TRỐNG':'#CBD5E1'})
+            fig_pie.update_traces(textinfo='percent+label')
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+
+        st.subheader("🔧 Phân tích Linh kiện")
+        top_lk = df_final['LINH_KIỆN'].value_counts().head(10).sort_values()
+        fig_bar = px.bar(top_lk, orientation='h', color_discrete_sequence=['#1E3A8A'])
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    with tab2:
+        st.subheader("⚠️ Danh sách thiết bị hỏng tái diễn")
+        if not re_fail_list.empty:
+            rf_data = []
+            for m_id, count in re_fail_list.items():
+                m_info = df_final[df_final['MÃ_MÁY'] == m_id]
+                rf_data.append({
+                    "Mã Máy": m_id,
+                    "Số lần": count,
+                    "Khách hàng": m_info['KHÁCH_HÀNG'].iloc[0],
+                    "Vùng": m_info['VÙNG'].iloc[0],
+                    "Linh kiện lỗi": " | ".join(m_info['LINH_KIỆN'].unique())
+                })
+            st.dataframe(pd.DataFrame(rf_data), use_container_width=True, hide_index=True)
+        else:
+            st.success("Không có máy hỏng tái diễn.")
+
+    with tab3:
+        st.subheader("🔍 Truy xuất dữ liệu chi tiết")
+        st.dataframe(df_final[['NGÀY', 'MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN', 'VÙNG']], use_container_width=True)
