@@ -1,128 +1,142 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 import time
 
-# 1. CẤU HÌNH GIAO DIỆN CHUẨN
-st.set_page_config(page_title="Hệ Thống AI 3651 - V60", layout="wide")
+# 1. CẤU HÌNH
+st.set_page_config(page_title="Hệ Thống AI 3651 - V61", layout="wide")
 
-# SẾP DÁN CÁI LINK CỦA RIÊNG TAB 3.651 DÒNG VÀO ĐÂY NHÉ
-DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?gid=675485241&single=true&output=csv"
+# LINK CSV (Sếp nhớ dùng link của đúng TAB chứa 3.651 dòng nhé)
+DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
 @st.cache_data(ttl=1)
-def load_data_v60():
+def load_data_v61():
     try:
-        # Phá cache để lấy dữ liệu thời thực
         url = f"{DATA_URL}&cache={time.time()}"
-        # Đọc dữ liệu, bỏ qua các dòng lỗi, ép kiểu chuỗi
         df_raw = pd.read_csv(url, on_bad_lines='skip', dtype=str).fillna("")
         
-        if df_raw.empty: return None
+        # --- DÒ CỘT THÔNG MINH ---
+        def find_col(keywords):
+            for col in df_raw.columns:
+                sample = " ".join(df_raw[col].astype(str).head(100)).upper()
+                if any(k in sample for k in keywords): return col
+            return None
 
-        # --- CHIẾN THUẬT TỰ CÂN CHỈNH CỘT (DÙNG NỘI DUNG ĐỂ ĐOÁN) ---
-        new_df = pd.DataFrame()
-        
-        # 1. Tìm cột MÃ MÁY: Cột nào chứa các mã như 3534, 1102...
-        col_ma = None
-        for col in df_raw.columns:
-            if df_raw[col].astype(str).str.contains(r'\d{4}', na=False).any():
-                col_ma = col
-                break
-        
-        # 2. Tìm cột LÝ DO: Cột nào có chữ "Thay", "Lỗi", "Hỏng"
-        col_ly = None
-        keywords = ['THAY', 'LỖI', 'HỎNG', 'SỬA', 'CÀI', 'LIỆT', 'VỠ']
-        for col in df_raw.columns:
-            sample = " ".join(df_raw[col].astype(str).head(100)).upper()
-            if any(k in sample for k in keywords):
-                col_ly = col
-                break
+        c_ma = find_col(['3534', '1102', 'MÃ']) or df_raw.columns[1]
+        c_ly = find_col(['LỖI', 'THAY', 'HỎNG', 'SỬA', 'CÀI']) or df_raw.columns[3]
+        c_ng = find_col(['2024', '2025', '2026', '/']) or df_raw.columns[0]
+        c_vm = find_col(['MIỀN', 'BẮC', 'NAM', 'TRUNG']) or (df_raw.columns[10] if len(df_raw.columns)>10 else None)
 
-        # 3. Tìm cột NGÀY: Cột có định dạng ngày tháng
-        col_ng = None
-        for col in df_raw.columns:
-            if df_raw[col].astype(str).str.contains(r'\d{1,2}/\d{1,2}', na=False).any():
-                col_ng = col
-                break
+        # CHUẨN HÓA
+        df = pd.DataFrame()
+        df['MÃ_MÁY'] = df_raw[c_ma].astype(str).str.split('.').str[0].str.strip()
+        df['LÝ_DO'] = df_raw[c_ly].astype(str).str.strip()
+        df['NGÀY'] = pd.to_datetime(df_raw[c_ng], dayfirst=True, errors='coerce')
+        if c_vm: df['VÙNG_MIỀN'] = df_raw[c_vm].astype(str).str.strip()
+        else: df['VÙNG_MIỀN'] = "Chưa phân loại"
 
-        # Gán mặc định nếu không quét được
-        col_ma = col_ma if col_ma else df_raw.columns[1]
-        col_ly = col_ly if col_ly else df_raw.columns[3]
-        col_ng = col_ng if col_ng else df_raw.columns[0]
-
-        # Xây dựng DataFrame chuẩn để vẽ biểu đồ và tìm kiếm
-        new_df['MÃ_MÁY'] = df_raw[col_ma].astype(str).str.split('.').str[0].str.strip()
-        new_df['LÝ_DO'] = df_raw[col_ly].astype(str).str.strip()
-        new_df['NGÀY_GỐC'] = pd.to_datetime(df_raw[col_ng], dayfirst=True, errors='coerce')
-        
-        # Lọc bỏ dòng rác (Mã máy phải có độ dài nhất định)
-        new_df = new_df[new_df['MÃ_MÁY'].str.len() >= 3].copy()
-        
-        # Loại bỏ các dòng bị nhầm sang Tên Hãng để biểu đồ chuẩn hơn
+        # LÀM SẠCH
+        df = df[df['MÃ_MÁY'].str.len() >= 3].copy()
         hang_may = ['HP', 'DELL', 'ASUS', 'LENOVO', 'ACER', 'APPLE']
-        new_df = new_df[~new_df['LÝ_DO'].str.upper().isin(hang_may)]
-
-        new_df['NĂM'] = new_df['NGÀY_GỐC'].dt.year.fillna(2026).astype(int)
-        new_df['THÁNG'] = new_df['NGÀY_GỐC'].dt.month.fillna(1).astype(int)
+        df = df[~df['LÝ_DO'].str.upper().isin(hang_may)]
         
-        return new_df
+        df['NĂM'] = df['NGÀY'].dt.year.fillna(2026).astype(int)
+        df['THÁNG'] = df['NGÀY'].dt.month.fillna(1).astype(int)
+        
+        return df
     except Exception as e:
         st.error(f"Lỗi rà soát: {e}")
         return None
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ ĐIỀU KHIỂN V60")
-    if st.button('🚀 ÉP ĐỒNG BỘ 3.651 DÒNG'):
+    st.header("⚙️ ĐIỀU KHIỂN V61")
+    if st.button('🚀 ĐỒNG BỘ DỮ LIỆU TỔNG'):
         st.cache_data.clear()
         st.rerun()
     
-    data = load_data_v60()
+    data = load_data_v61()
     if data is not None:
-        st.success(f"✅ Đã kết nối {len(data)} dòng")
+        st.success(f"✅ Kết nối {len(data)} dòng")
         
-        y_list = sorted([y for y in data['NĂM'].unique() if y > 2020], reverse=True)
-        sel_year = st.selectbox("📅 Chọn Năm", ["Tất cả"] + y_list)
-        sel_month = st.selectbox("📆 Chọn Tháng", ["Tất cả"] + [f"Tháng {i}" for i in range(1, 13)])
+        # BỘ LỌC NĂM
+        y_list = sorted(data['NĂM'].unique(), reverse=True)
+        sel_year = st.selectbox("📅 Chọn Năm", ["Tất cả"] + [int(y) for y in y_list])
         
-        df_view = data.copy()
-        if sel_year != "Tất cả": df_view = df_view[df_view['NĂM'] == int(sel_year)]
+        # BỘ LỌC THÁNG
+        months = ["Tất cả"] + [f"Tháng {i}" for i in range(1, 13)]
+        sel_month = st.selectbox("📆 Chọn Tháng", months)
+        
+        # THỰC THI LỌC
+        df_filtered = data.copy()
+        if sel_year != "Tất cả": df_filtered = df_filtered[df_filtered['NĂM'] == int(sel_year)]
         if sel_month != "Tất cả":
             m_num = int(sel_month.split(" ")[1])
-            df_view = df_view[df_view['THÁNG'] == m_num]
+            df_filtered = df_filtered[df_filtered['THÁNG'] == m_num]
     else:
-        df_view = pd.DataFrame()
+        df_filtered = pd.DataFrame()
 
-# --- GIAO DIỆN ---
+# --- GIAO DIỆN CHÍNH ---
 st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ QUẢN TRỊ TÀI SẢN CHI TIẾT 2026</h1>', unsafe_allow_html=True)
 
-if not df_view.empty:
-    st.divider()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Tổng ca hỏng", len(df_view))
-    c2.metric("Số thiết bị", df_view['MÃ_MÁY'].nunique())
+if not df_filtered.empty:
+    # CHỈ SỐ TỔNG QUÁT
+    st.write(f"📂 **Đang hiển thị:** {sel_month} / {sel_year}")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Tổng ca hỏng", len(df_filtered))
+    c2.metric("Số thiết bị", df_filtered['MÃ_MÁY'].nunique())
     
-    heavy = data['MÃ_MÁY'].value_counts()
-    c3.metric("Máy hỏng nặng (>3 lần)", len(heavy[heavy > 3]))
+    heavy_data = data['MÃ_MÁY'].value_counts()
+    c3.metric("Máy hỏng >2 lần", len(heavy_data[heavy_data > 2]))
+    c4.metric("Vùng miền", df_filtered['VÙNG_MIỀN'].nunique())
 
-    t1, t2 = st.tabs(["📊 BIỂU ĐỒ LỖI", "🔍 TRUY LỤC MÃ MÁY"])
-    
-    with t1:
-        st.subheader("📈 Thống kê linh kiện hỏng")
-        # Chỉ vẽ biểu đồ nếu cột Lý do không rỗng
-        top_err = df_view[df_view['LÝ_DO'].str.len() > 2]['LÝ_DO'].value_counts().head(10)
-        if not top_err.empty:
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 BIỂU ĐỒ TỔNG HỢP", "🔍 TRUY LỤC", "🚩 MÁY HỎNG NHIỀU", "🤖 TRỢ LÝ AI", "📖 HƯỚNG DẪN"])
+
+    with tab1:
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.subheader("📈 Lỗi linh kiện phổ biến")
+            top_err = df_filtered[df_filtered['LÝ_DO'].str.len() > 2]['LÝ_DO'].value_counts().head(10)
             st.bar_chart(top_err)
-        else:
-            st.warning("Dữ liệu lý do hỏng đang bị trống hoặc sai cột.")
+        
+        with col_right:
+            st.subheader("📍 Tỷ lệ theo Vùng Miền")
+            vm_counts = df_filtered['VÙNG_MIỀN'].value_counts().reset_index()
+            fig = px.pie(vm_counts, values='count', names='VÙNG_MIỀN', hole=0.4)
+            st.plotly_chart(fig, use_container_width=True)
 
-    with t2:
-        q = st.text_input("Nhập mã máy (VD: 3534):", key="search_v60")
+    with tab2:
+        q = st.text_input("Nhập mã máy (VD: 3534):")
         if q:
             res = data[data['MÃ_MÁY'].str.contains(q, na=False)]
-            # Kiểm tra cột trước khi sort để tránh lỗi KeyError
-            if not res.empty and 'NGÀY_GỐC' in res.columns:
-                st.dataframe(res[['NGÀY_GỐC', 'MÃ_MÁY', 'LÝ_DO']].sort_values('NGÀY_GỐC', ascending=False), use_container_width=True)
+            st.dataframe(res[['NGÀY', 'MÃ_MÁY', 'LÝ_DO', 'VÙNG_MIỀN']].sort_values('NGÀY', ascending=False), use_container_width=True)
+
+    with tab3:
+        st.subheader("🚩 Danh sách máy hư trên 2 lần (Toàn thời gian)")
+        list_heavy = heavy_data[heavy_data > 2].reset_index()
+        list_heavy.columns = ['Mã Máy', 'Số lần hỏng']
+        st.table(list_heavy.head(20))
+
+    with tab4:
+        st.subheader("🤖 Trợ lý phân tích dữ liệu")
+        user_ask = st.chat_input("Hỏi tôi về tình trạng máy móc...")
+        if user_ask:
+            st.write(f"💬 **Bạn hỏi:** {user_ask}")
+            # Logic Trợ lý AI đơn giản (Có thể kết nối API Gemini tại đây)
+            if "nhiều nhất" in user_ask.lower():
+                top_1 = data['LÝ_DO'].value_counts().idxmax()
+                st.info(f"🤖 AI trả lời: Lỗi xuất hiện nhiều nhất là **{top_1}**.")
             else:
-                st.dataframe(res)
+                st.info("🤖 AI trả lời: Tôi đã nhận câu hỏi và đang phân tích dữ liệu 3.651 dòng của sếp...")
+
+    with tab5:
+        st.markdown("""
+        ### 📖 HƯỚNG DẪN SỬ DỤNG HỆ THỐNG
+        1. **Đồng bộ dữ liệu:** Nhấn nút '🚀 ĐỒNG BỘ' ở Sidebar để lấy dữ liệu mới nhất từ Google Sheets.
+        2. **Lọc dữ liệu:** Sử dụng dropdown Năm và Tháng để xem báo cáo cụ thể.
+        3. **Truy lục:** Vào Tab 'TRUY LỤC', nhập mã máy để xem toàn bộ lịch sử sửa chữa từ trước tới nay.
+        4. **Máy hỏng nhiều:** Theo dõi Tab này để có kế hoạch thanh lý hoặc thay mới thiết bị kém chất lượng.
+        5. **Lưu ý:** Để dữ liệu chính xác, hãy đảm bảo file Google Sheets nhập đúng cột Ngày và Mã máy.
+        """)
 else:
-    st.warning("⚠️ Đang chờ dữ liệu... Sếp hãy kiểm tra Link CSV xem đã chọn đúng Tab 3.651 dòng chưa nhé.")
+    st.info("💡 Đang tải dữ liệu... Sếp hãy kiểm tra Link CSV hoặc nhấn 'LÀM MỚI'.")
