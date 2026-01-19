@@ -3,30 +3,33 @@ import pandas as pd
 import plotly.express as px
 
 # 1. CẤU HÌNH GIAO DIỆN
-st.set_page_config(page_title="Hệ Thống Quản Trị AI - V26", layout="wide")
+st.set_page_config(page_title="Hệ Thống Quản Trị AI - V27", layout="wide")
 
-# 2. LINK PUBLISH CHUẨN TỪ HÌNH image_b3b445.png CỦA SẾP
-DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
+# 2. XỬ LÝ LINK DỮ LIỆU THÔNG MINH
+# Link gốc sếp copy từ Google
+RAW_LINK = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pubhtml"
 
-@st.cache_data(ttl=10) # Giữ cache 10 giây để tránh overload nhưng vẫn cập nhật nhanh
-def load_data_v26():
+# AI tự động chuyển đổi sang định dạng CSV nếu sếp lỡ dán link pubhtml
+if "pubhtml" in RAW_LINK:
+    DATA_URL = RAW_LINK.replace("pubhtml", "pub?output=csv")
+else:
+    DATA_URL = RAW_LINK
+
+@st.cache_data(ttl=10)
+def load_data_v27():
     try:
-        # Thêm biến t để Google không trả về bản cũ
-        final_url = f"{DATA_URL}&timestamp={pd.Timestamp.now().timestamp()}"
-        # Đọc dữ liệu thô
+        # Ép làm mới dữ liệu bằng timestamp
+        final_url = f"{DATA_URL}&t={pd.Timestamp.now().timestamp()}"
         raw_df = pd.read_csv(final_url, dtype=str)
         
-        # Kiểm tra nếu file có dữ liệu
-        if raw_df.empty:
-            return pd.DataFrame()
+        if raw_df.empty: return pd.DataFrame()
 
         df = pd.DataFrame()
-        # Ép tọa độ cột: B (Mã Máy), D (Lý do), G (Ngày sửa)
+        # Định vị cột: B (Mã Máy), D (Lý do), G (Ngày sửa)
         df['MÃ_MÁY'] = raw_df.iloc[:, 1].str.split('.').str[0].str.strip()
         df['LÝ_DO'] = raw_df.iloc[:, 3].fillna("Chưa rõ")
         df['NGAY_FIX'] = pd.to_datetime(raw_df.iloc[:, 6], errors='coerce', dayfirst=True)
         
-        # Nhận diện vùng miền (Sửa lỗi dồn vào 'Khác' ở hình image_a943d9.png)
         def detect_vung(row):
             txt = " ".join(row.astype(str)).upper()
             if any(x in txt for x in ["NAM", "MN"]): return "Miền Nam"
@@ -39,15 +42,15 @@ def load_data_v26():
         df['NĂM'] = df['NGAY_FIX'].dt.year
         return df
     except Exception as e:
-        st.error(f"Lỗi đọc dữ liệu: {e}")
+        st.error(f"⚠️ Lỗi đọc dữ liệu: Có thể link 'Publish to web' đã bị thay đổi hoặc hết hạn. Lỗi: {e}")
         return pd.DataFrame()
 
-df_all = load_data_v26()
+df_all = load_data_v27()
 
-# --- SIDEBAR (Hình image_a8e9e4.png) ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.header("🛡️ BỘ LỌC CHIẾN LƯỢC")
-    if st.button('🔄 LÀM MỚI 3.651 DÒNG'):
+    st.header("🛡️ QUẢN TRỊ DỮ LIỆU")
+    if st.button('🔄 ÉP LÀM MỚI 3.651 DÒNG'):
         st.cache_data.clear()
         st.rerun()
     
@@ -68,38 +71,38 @@ if not df_all.empty:
 
     with tab1:
         c1, c2, c3 = st.columns(3)
-        c1.metric("Tổng ca hỏng", f"{len(df_filtered)}")
+        c1.metric("Tổng lượt hỏng", f"{len(df_filtered)}")
         c2.metric("Số thiết bị", f"{df_filtered['MÃ_MÁY'].nunique()}")
         
         bad_counts = df_all['MÃ_MÁY'].value_counts()
         crit_count = len(bad_counts[bad_counts >= 4])
-        c3.metric("Máy cần thay thế", f"{crit_count}")
+        c3.metric("Máy cần thanh lý", f"{crit_count}")
 
         st.divider()
         cl, cr = st.columns(2)
         with cl:
-            st.subheader("📍 Tỷ lệ hỏng theo Khu vực")
+            st.subheader("📍 Phân bổ theo Khu vực")
             st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.4), use_container_width=True)
         with cr:
-            st.subheader("🛠️ Thống kê linh kiện hỏng")
+            st.subheader("🛠️ Thống kê linh kiện")
             def classify_lk(x):
                 x = str(x).lower()
                 if 'pin' in x: return 'Pin'
                 if 'màn' in x: return 'Màn hình'
                 if 'phím' in x: return 'Bàn phím'
-                if 'sạc' in x or 'adapter' in x: return 'Sạc/Adapter'
                 if 'main' in x: return 'Mainboard'
+                if 'sạc' in x or 'adapter' in x: return 'Sạc/Adapter'
                 return 'Khác'
             df_filtered['LK'] = df_filtered['LÝ_DO'].apply(classify_lk)
             st.plotly_chart(px.bar(df_filtered['LK'].value_counts().reset_index(), x='count', y='LK', orientation='h', color='LK'), use_container_width=True)
 
     with tab2:
-        st.subheader("💬 Tra cứu hồ sơ 3.651 dòng")
-        q = st.text_input("Gõ mã máy (VD: 3534):")
+        st.subheader("💬 Tra cứu hồ sơ (3.651 dòng)")
+        q = st.text_input("Gõ mã máy:")
         if q:
             res = df_all[df_all['MÃ_MÁY'].str.contains(q, na=False, case=False)]
             if not res.empty:
-                st.success(f"Tìm thấy {len(res)} bản ghi cho máy {q}")
+                st.success(f"Dữ liệu máy {q}:")
                 st.dataframe(res[['NGAY_FIX', 'LÝ_DO', 'VÙNG_MIỀN']].sort_values('NGAY_FIX', ascending=False), use_container_width=True)
 
     with tab3:
@@ -110,4 +113,4 @@ if not df_all.empty:
         ).reset_index()
         st.dataframe(report[report['Lượt_hỏng'] >= 4].sort_values('Lượt_hỏng', ascending=False), use_container_width=True)
 else:
-    st.info("Đang đồng bộ dữ liệu... Sếp hãy kiểm tra xem đã nhấn 'Dừng xuất bản' rồi 'Xuất bản lại' trên Sheets chưa nhé.")
+    st.warning("⚠️ Dữ liệu không hiển thị. Sếp hãy kiểm tra xem Google Sheets đã được 'Xuất bản' đúng chưa.")
