@@ -10,19 +10,15 @@ st.set_page_config(page_title="Hệ Thống Quản Trị Tài Sản AI", layout=
 st.markdown("""
     <style>
     .stMetric { 
-        background-color: #ffffff; 
-        padding: 20px; 
-        border-radius: 12px; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-        border-top: 5px solid #1E3A8A;
+        background-color: #ffffff; padding: 20px; border-radius: 12px; 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #1E3A8A;
     }
     .main-title { color: #1E3A8A; font-weight: 800; text-align: center; font-size: 2.2rem; margin-bottom: 20px; }
     .chat-container { background-color: #f0f2f6; padding: 25px; border-radius: 15px; border: 2px solid #1E3A8A; }
-    .guide-box { background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 5px solid #1E3A8A; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. KẾT NỐI DỮ LIỆU & CHUẨN HÓA MÃ MÁY
+# 2. KẾT NỐI DỮ LIỆU & CHUẨN HÓA
 PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRuNH37yVPVZsAOyyJ4Eqvc0Hsd5XvucmKvw1XyZwhkeV6YVuxhZ14ACHxrtQf-KD-fP0yWlbgpdat-/pub?gid=675485241&single=true&output=csv"
 
 @st.cache_data(ttl=60)
@@ -31,14 +27,11 @@ def load_data():
         df = pd.read_csv(PUBLISHED_URL)
         df.columns = [f"COL_{i}" for i in range(len(df.columns))]
         
-        # Hàm chuẩn hóa mã máy để Chatbot đọc không bao giờ sai
-        def clean_machine_code(val):
+        def clean_code(val):
             if pd.isna(val): return ""
-            # Chuyển 3534.0 -> 3534
-            s = str(val).split('.')[0].strip()
-            return s
+            return str(val).split('.')[0].strip()
 
-        df['MÃ_MÁY'] = df['COL_1'].apply(clean_machine_code)
+        df['MÃ_MÁY'] = df['COL_1'].apply(clean_code)
         
         def detect_region(row):
             text = " ".join(row.astype(str)).upper()
@@ -58,46 +51,40 @@ def load_data():
 
 df_global = load_data()
 
-# --- BỘ LỌC CHIẾN LƯỢC ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("🛡️ BỘ LỌC CHIẾN LƯỢC")
-    if not df_global.empty:
-        list_years = sorted(df_global['NĂM'].unique(), reverse=True)
-        sel_year = st.selectbox("📅 Chọn Năm", list_years, index=list_years.index(2026) if 2026 in list_years else 0)
-        list_vung = sorted(df_global['VÙNG_MIỀN'].unique())
-        sel_vung = st.multiselect("📍 Chọn Miền", list_vung, default=list_vung)
-        df_temp = df_global[(df_global['NĂM'] == sel_year) & (df_global['VÙNG_MIỀN'].isin(sel_vung))]
-        list_months = sorted(df_temp['THÁNG'].unique())
-        sel_months = st.multiselect("📆 Chọn Tháng", list_months, default=list_months)
-        
-        st.divider()
-        csv = df_temp.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(label="📥 Tải Báo Cáo CSV", data=csv, file_name=f'Bao_cao_{sel_year}.csv', mime='text/csv')
+    list_years = sorted(df_global['NĂM'].unique(), reverse=True)
+    sel_year = st.selectbox("📅 Chọn Năm", list_years, index=list_years.index(2026) if 2026 in list_years else 0)
+    list_vung = sorted(df_global['VÙNG_MIỀN'].unique())
+    sel_vung = st.multiselect("📍 Chọn Miền", list_vung, default=list_vung)
+    df_filtered = df_global[(df_global['NĂM'] == sel_year) & (df_global['VÙNG_MIỀN'].isin(sel_vung))]
 
-df_filtered = df_global[(df_global['NĂM'] == sel_year) & (df_global['THÁNG'].isin(sel_months)) & (df_global['VÙNG_MIỀN'].isin(sel_vung))]
-machine_counts = df_global['MÃ_MÁY'].value_counts()
-critical_machines = machine_counts[machine_counts >= 4].index.tolist()
+# 3. XỬ LÝ DỮ LIỆU MÁY HỎNG NHIỀU (Dùng cho Tab 4 và KPI)
+machine_stats = df_global['MÃ_MÁY'].value_counts().reset_index()
+machine_stats.columns = ['Mã Máy', 'Số Lần Hỏng']
+# Lọc những máy hỏng >= 4 lần
+critical_list = machine_stats[machine_stats['Số Lần Hỏng'] >= 4]
 
 # --- GIAO DIỆN CHÍNH ---
 st.markdown('<p class="main-title">🛡️ HỆ THỐNG QUẢN TRỊ TÀI SẢN CHIẾN LƯỢC AI</p>', unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["📊 Dashboard & AI Chat", "⚡ Ưu Tiên Mua Sắm", "📖 Hướng Dẫn"])
+tab1, tab2, tab4, tab3 = st.tabs(["📊 Dashboard & AI Chat", "⚡ Ưu Tiên Mua Sắm", "🚩 Danh Sách Nguy Kịch", "📖 Hướng Dẫn"])
 
 with tab1:
+    # 3 THẺ KPI GỐC
     c1, c2, c3 = st.columns(3)
     c1.metric("Tổng lượt hỏng", f"{len(df_filtered)} ca")
     
-    n_m = len(sel_months) if sel_months else 1
     forecast_counts = df_filtered['LÝ_DO_HỎNG'].value_counts().head(5)
-    est_budget = sum([math.ceil((v/n_m)*1.2)*500000 for v in forecast_counts.values])
+    est_budget = sum([math.ceil((v/1)*1.2)*500000 for v in forecast_counts.values])
     c2.metric("Ngân sách dự phòng", f"{est_budget:,.0f}đ")
     
-    curr_crit_count = df_filtered[df_filtered['MÃ_MÁY'].isin(critical_machines)]['MÃ_MÁY'].nunique()
-    c3.metric("Máy Nguy kịch (Đỏ)", f"{curr_crit_count}")
+    # Chỉ tính máy nguy kịch xuất hiện trong dữ liệu đang lọc
+    curr_crit = df_filtered[df_filtered['MÃ_MÁY'].isin(critical_list['Mã Máy'])]['MÃ_MÁY'].nunique()
+    c3.metric("Máy Nguy kịch (Đỏ)", f"{curr_crit}")
 
     st.divider()
-
-    # BIỂU ĐỒ TRÒN & LINH KIỆN
     col_l, col_r = st.columns(2)
     with col_l:
         st.subheader("📍 Tỷ lệ hỏng theo Vùng miền")
@@ -106,55 +93,52 @@ with tab1:
         st.subheader("🛠️ Thống kê linh kiện")
         def classify(r):
             r = r.lower()
-            if 'pin' in r: return 'Pin'
+            if 'pin' in r: return 'Pin'; 
             if 'màn' in r: return 'Màn hình'
-            if 'phím' in r: return 'Bàn phím'
-            return 'Linh kiện khác'
+            return 'Khác'
         df_filtered['LK'] = df_filtered['LÝ_DO_HỎNG'].apply(classify)
         st.plotly_chart(px.bar(df_filtered['LK'].value_counts().reset_index(), x='count', y='LK', orientation='h'), use_container_width=True)
 
+    # CHATBOT AI (V14)
     st.divider()
-
-    # --- CHATBOT AI QUÉT DỮ LIỆU ĐÃ ĐƯỢC CHUẨN HÓA ---
-    st.subheader("💬 Trợ lý AI (Tra cứu bệnh án máy)")
-    with st.container():
-        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-        q = st.text_input("Gõ mã máy để AI quét dữ liệu (VD: 3534):")
-        if q:
-            # Tách lấy phần số từ câu hỏi của sếp
-            import re
-            m = re.search(r'\d+', q)
-            if m:
-                target_code = m.group()
-                # Quét trên toàn bộ 3.976 dòng đã chuẩn hóa
-                res = df_global[df_global['MÃ_MÁY'] == target_code].sort_values('NGAY_FIX', ascending=False)
-                
-                if not res.empty:
-                    count = len(res)
-                    st.markdown(f"✅ **AI tìm thấy:** Máy **{target_code}** hỏng **{count} lần**.")
-                    if count >= 4:
-                        st.error(f"🚨 CẢNH BÁO: Máy {target_code} nằm trong danh sách ĐỎ. Đề xuất THANH LÝ NGAY.")
-                    else:
-                        st.success(f"📝 Ghi chú: Máy {target_code} vẫn ổn định. Ưu tiên bảo trì.")
-                    st.dataframe(res[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']], use_container_width=True)
-                else:
-                    st.warning(f"❌ Không tìm thấy mã máy '{target_code}' trong cơ sở dữ liệu. Sếp hãy kiểm tra lại số máy.")
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.subheader("💬 Trợ lý AI (Tra cứu bệnh án)")
+    q = st.text_input("Gõ mã máy (VD: 3534):", key="chatbot_input")
+    if q:
+        import re
+        m = re.search(r'\d+', q)
+        if m:
+            code = m.group()
+            res = df_global[df_global['MÃ_MÁY'] == code].sort_values('NGAY_FIX', ascending=False)
+            if not res.empty:
+                st.info(f"AI: Máy {code} hỏng {len(res)} lần. " + ("**ĐỀ XUẤT THANH LÝ!**" if len(res)>=4 else "**SỬA TIẾP**"))
+                st.dataframe(res[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']], use_container_width=True)
 
 with tab2:
-    st.header("📋 Hệ Thống Ưu Tiên Mua Sắm")
-    if not df_filtered.empty:
-        df_p = df_filtered.copy()
-        df_p['ƯU TIÊN'] = df_p.apply(lambda r: "🔴 KHẨN CẤP" if any(x in str(r['LÝ_DO_HỎNG']) for x in ['Màn', 'Main']) else "🟢 BÌNH THƯỜNG", axis=1)
-        st.dataframe(df_p[['ƯU TIÊN', 'MÃ_MÁY', 'LÝ_DO_HỎNG', 'NGAY_FIX', 'VÙNG_MIỀN']], use_container_width=True)
+    st.header("📋 Ưu Tiên Mua Sắm")
+    df_p = df_filtered.copy()
+    df_p['ƯU TIÊN'] = df_p.apply(lambda r: "🔴 KHẨN CẤP" if any(x in str(r['LÝ_DO_HỎNG']) for x in ['Màn', 'Main']) else "🟢 BÌNH THƯỜNG", axis=1)
+    st.dataframe(df_p[['ƯU TIÊN', 'MÃ_MÁY', 'LÝ_DO_HỎNG', 'NGAY_FIX', 'VÙNG_MIỀN']], use_container_width=True)
+
+with tab4:
+    st.header("🚩 Phân Tích Thiết Bị Hỏng Nhiều Lần")
+    st.write("Dưới đây là danh sách các máy hỏng từ **4 lần trở lên** (Toàn thời gian). Sếp có thể nhấn vào tiêu đề cột để sắp xếp.")
+    
+    # Bổ sung thông tin Vùng miền cho danh sách nguy kịch để sếp dễ xử lý
+    last_known_region = df_global.drop_duplicates('MÃ_MÁY', keep='first')[['MÃ_MÁY', 'VÙNG_MIỀN']]
+    critical_data = critical_list.merge(last_known_region, left_on='Mã Máy', right_on='MÃ_MÁY').drop(columns=['MÃ_MÁY'])
+    
+    # Hiển thị bảng với chức năng SORT mặc định của Streamlit
+    st.dataframe(
+        critical_data.sort_values(by='Số Lần Hỏng', ascending=False),
+        use_container_width=True,
+        column_config={
+            "Số Lần Hỏng": st.column_config.NumberColumn(format="%d 🔥"),
+            "Mã Máy": st.column_config.TextColumn("Mã Máy Thiết Bị"),
+            "VÙNG_MIỀN": "Vị Trí Gần Nhất"
+        }
+    )
+    
+    st.warning("💡 **Hướng xử lý:** Các máy có biểu tượng 🔥 nhiều nên được đưa vào diện thanh lý trong quý này.")
 
 with tab3:
-    st.markdown("""
-    <div class="guide-box">
-        <h3>📖 QUY TRÌNH VẬN HÀNH 2026</h3>
-        <p><b>Bước 1:</b> Kiểm tra 3 thẻ KPI đầu trang để nắm tổng thể chi phí rủi ro.</p>
-        <p><b>Bước 2:</b> Sử dụng <b>Trợ lý AI</b> để kiểm tra tiền sử của máy trước khi duyệt linh kiện thay thế.</p>
-        <p><b>Bước 3:</b> Tải báo cáo CSV ở sidebar hàng tuần để lưu trữ dữ liệu đối soát.</p>
-        <p><b>Bước 4:</b> Các máy có trạng thái "Nguy kịch" cần được lập danh sách thanh lý định kỳ.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.info("### 📖 Hướng Dẫn Vận Hành\n1. Tab 1: Xem tổng quan và Chat với AI.\n2. Tab 2: Xem linh kiện cần mua gấp.\n3. Tab 4: Lọc máy nát để lập danh sách thanh lý.")
