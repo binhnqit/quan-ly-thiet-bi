@@ -4,162 +4,136 @@ import plotly.express as px
 import time
 import re
 
-# 1. THIẾT LẬP HỆ THỐNG EXECUTIVE
-st.set_page_config(page_title="Hệ Thống Quản Trị V110", layout="wide")
+# 1. THIẾT LẬP GIAO DIỆN EXECUTIVE
+st.set_page_config(page_title="Hệ Thống Quản Trị V120 - 2026", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background-color: #f4f7f9; }
-    [data-testid="stMetricValue"] { font-size: 24px; color: #1E3A8A; font-weight: bold; }
-    .stTable { font-size: 14px; }
-    .status-critical { color: #d32f2f; font-weight: bold; }
-    .stTabs [data-baseweb="tab"] { font-size: 16px; font-weight: 600; }
+    .main { background-color: #f8f9fa; }
+    .stMetric { background: white; border-radius: 12px; padding: 20px; border-top: 5px solid #1E3A8A; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .stTabs [data-baseweb="tab-list"] { background-color: #ffffff; padding: 10px; border-radius: 10px; }
+    .stTabs [aria-selected="true"] { background-color: #1E3A8A !important; color: white !important; }
     </style>
 """, unsafe_allow_html=True)
 
 DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
-@st.cache_data(ttl=60) # Tăng cache để mượt mà hơn
-def load_and_optimize_data():
+@st.cache_data(ttl=1)
+def load_data_2026_only():
     try:
         url = f"{DATA_URL}&cache={time.time()}"
         df_raw = pd.read_csv(url, dtype=str, header=None).fillna("")
         
-        valid_rows = []
-        for idx, row in df_raw.iterrows():
-            # Skip header
-            if idx == 0 or "Mã số" in str(row.iloc[1]): continue
-            
+        cleaned_rows = []
+        for i, row in df_raw.iterrows():
             row_str = " ".join(row.values.astype(str))
+            # Bỏ qua dòng tiêu đề
+            if i == 0 or "Mã số" in row_str: continue
             
-            # 1. Regex bóc tách ngày tháng chuẩn
+            # 1. BÓC TÁCH NGÀY THÁNG
             date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', row_str)
             if not date_match: continue
-            date_val = date_match.group(1)
-
-            # 2. Định danh thiết bị (Ưu tiên cột 1, dự phòng Regex)
-            ma = str(row.iloc[1]).strip().split('.')[0]
-            if not ma or ma == "nan":
-                ma_match = re.findall(r'\b\d{3,5}\b', row_str)
-                ma = ma_match[0] if ma_match else "N/A"
+            ngay_str = date_match.group(1)
+            ngay_dt = pd.to_datetime(ngay_str, dayfirst=True, errors='coerce')
             
-            if ma == "N/A": continue
+            # --- BỘ LỌC CỨNG 2026 ---
+            if ngay_dt is None or ngay_dt.year != 2026:
+                continue # Bỏ qua dữ liệu 2025 trở về trước
 
-            # 3. Thông tin chi tiết
+            # 2. LẤY DỮ LIỆU CHUẨN (Theo index sếp đã xác nhận ở V101)
+            ma = str(row.iloc[1]).strip().split('.')[0]
             kh = str(row.iloc[2]).strip()
             lk = str(row.iloc[3]).strip()
             
-            valid_rows.append([date_val, ma, kh, lk])
+            # 3. PHÂN VÙNG MIỀN THÔNG MINH (Bao gồm tên đơn vị Miền Trung sếp đã nêu)
+            def identify_vung(khach):
+                v = str(khach).upper()
+                trung_keywords = [
+                    'ĐÀ NẴNG', 'HUẾ', 'VINH', 'NGHỆ', 'TĨNH', 'QUẢNG', 'BÌNH ĐỊNH', 
+                    'KHÁNH HÒA', 'NHA TRANG', 'PHÚ NGUYỄN', 'NGỌC VĨNH', 'PHÚC LỘC THỌ'
+                ]
+                bac_keywords = ['HN', 'NỘI', 'BẮC', 'SƠN', 'PHÚ THỌ', 'THÁI NGUYÊN', 'GIANG', 'NINH']
+                
+                if any(x in v for x in trung_keywords): return 'MIỀN TRUNG'
+                if any(x in v for x in bac_keywords): return 'MIỀN BẮC'
+                return 'MIỀN NAM'
 
-        df = pd.DataFrame(valid_rows, columns=['NGÀY', 'MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN'])
-        df['NGÀY_DT'] = pd.to_datetime(df['NGÀY'], dayfirst=True, errors='coerce')
-        df['NĂM'] = df['NGÀY_DT'].dt.year.fillna(2026).astype(int)
-        df['THÁNG'] = df['NGÀY_DT'].dt.month.fillna(1).astype(int)
-        df['THÁNG_NĂM'] = df['NGÀY_DT'].dt.strftime('%m/%Y')
+            vung = identify_vung(kh)
+            
+            if ma and ma != "nan":
+                cleaned_rows.append([ngay_str, ngay_dt, ma, kh, lk, vung])
 
-        # 4. Phân vùng miền tối ưu (Hard-mapping)
-        def get_vung(name):
-            n = str(name).upper()
-            if any(x in n for x in ['ĐÀ NẴNG', 'HUẾ', 'QUẢNG', 'VINH', 'NGHỆ', 'TĨNH', 'BÌNH ĐỊNH', 'KHÁNH HÒA', 'TRUNG']):
-                return 'MIỀN TRUNG'
-            if any(x in n for x in ['HN', 'NỘI', 'BẮC', 'PHÚ', 'SƠN', 'THÁI', 'GIANG', 'NINH', 'TUYÊN']):
-                return 'MIỀN BẮC'
-            return 'MIỀN NAM'
-        
-        df['VÙNG'] = df['KHÁCH_HÀNG'].apply(get_vung)
+        df = pd.DataFrame(cleaned_rows, columns=['NGÀY', 'DT_OBJ', 'MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN', 'VÙNG'])
+        df['THÁNG'] = df['DT_OBJ'].dt.month
         return df
     except Exception as e:
-        st.error(f"Lỗi kiến trúc dữ liệu: {e}")
+        st.error(f"Lỗi: {e}")
         return None
 
-# --- KHỞI CHẠY HỆ THỐNG ---
-data = load_and_optimize_data()
+# --- GIAO DIỆN CHÍNH ---
+data = load_data_2026_only()
 
 if data is not None:
     with st.sidebar:
-        st.title("🛡️ QUẢN TRỊ V110")
-        if st.button('🔄 ĐỒNG BỘ DỮ LIỆU', use_container_width=True):
+        st.header("⚙️ ĐIỀU KHIỂN 2026")
+        if st.button('🔄 ĐỒNG BỘ DỮ LIỆU MỚI', use_container_width=True):
             st.cache_data.clear()
             st.rerun()
         
-        st.divider()
-        y_sel = st.selectbox("📅 Chọn Năm", sorted(data['NĂM'].unique(), reverse=True))
-        m_sel = st.selectbox("📆 Chọn Tháng", ["Tất cả"] + [f"Tháng {i}" for i in range(1, 13)])
+        m_list = ["Tất cả năm 2026"] + [f"Tháng {i}" for i in range(1, 13)]
+        sel_m = st.selectbox("Chọn kỳ báo cáo", m_list)
 
-        # Lọc dữ liệu lõi
-        mask = (data['NĂM'] == y_sel)
-        if m_sel != "Tất cả":
-            mask &= (data['THÁNG'] == int(m_sel.replace("Tháng ", "")))
-        df_view = data[mask]
+        df_final = data.copy()
+        if sel_m != "Tất cả năm 2026":
+            df_final = df_final[df_final['THÁNG'] == int(sel_m.replace("Tháng ", ""))]
 
-    # --- DASHBOARD CHÍNH ---
-    st.title(f"📊 Hệ Thống Phân Tích Lỗi Thiết Bị - {m_sel}/{y_sel}")
+    # --- HIỂN THỊ KPI ---
+    st.title(f"📊 Báo Cáo Tài Sản 2026 - {sel_m}")
     
-    # KPI SECTION
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Tổng ca hỏng", f"{len(df_view):,}")
-    k2.metric("Thiết bị lỗi", f"{df_view['MÃ_MÁY'].nunique():,}")
+    k1.metric("Tổng ca hỏng (2026)", len(df_final))
+    k2.metric("Số thiết bị lỗi", df_final['MÃ_MÁY'].nunique())
     
-    counts = df_view['MÃ_MÁY'].value_counts()
-    critical_devices = counts[counts >= 3] # Thiết bị hỏng cực nặng
-    re_fail = counts[counts > 1] # Thiết bị hỏng tái diễn
+    # Tính máy hỏng tái diễn
+    re_counts = df_final['MÃ_MÁY'].value_counts()
+    re_fail = re_counts[re_counts > 1]
+    k3.metric("Máy hỏng tái diễn", len(re_fail))
     
-    k3.metric("Hỏng tái diễn (>1 lần)", f"{len(re_fail)}", delta=f"{len(critical_devices)} Cực nặng", delta_color="inverse")
-    k4.metric("Khách hàng báo lỗi", df_view['KHÁCH_HÀNG'].nunique())
+    # Miền trung
+    trung_count = len(df_final[df_final['VÙNG'] == 'MIỀN TRUNG'])
+    k4.metric("Dữ liệu Miền Trung", trung_count)
 
-    # TABULAR VIEW
-    t1, t2, t3, t4 = st.tabs(["📉 XU HƯỚNG & PHÂN BỔ", "🚩 QUẢN TRỊ RỦI RO (RE-FAIL)", "🔍 TRUY XUẤT NHANH", "📋 DỮ LIỆU GỐC"])
+    tab1, tab2, tab3 = st.tabs(["📉 BIỂU ĐỒ TỔNG QUAN", "⚠️ DANH SÁCH ĐEN", "📋 DỮ LIỆU ĐỐI SOÁT"])
 
-    with t1:
-        c1, c2 = st.columns([2, 1])
+    with tab1:
+        c1, c2 = st.columns(2)
         with c1:
-            st.subheader("📈 Xu hướng lỗi theo thời gian")
-            trend_data = df_view.groupby('NGÀY_DT').size().reset_index(name='Số ca hỏng')
-            fig_trend = px.line(trend_data, x='NGÀY_DT', y='Số ca hỏng', markers=True, 
-                                line_shape='spline', color_discrete_sequence=['#1E3A8A'])
-            st.plotly_chart(fig_trend, use_container_width=True)
-            
+            st.subheader("📍 Tỷ trọng Vùng Miền (Chuẩn 2026)")
+            fig = px.pie(df_final, names='VÙNG', hole=0.5,
+                         color_discrete_map={'MIỀN BẮC':'#1E3A8A', 'MIỀN TRUNG':'#F59E0B', 'MIỀN NAM':'#10B981'})
+            st.plotly_chart(fig, use_container_width=True)
         with c2:
-            st.subheader("📍 Phân bổ Vùng Miền")
-            fig_pie = px.pie(df_view, names='VÙNG', hole=0.5,
-                             color_discrete_map={'MIỀN BẮC':'#1E3A8A', 'MIỀN TRUNG':'#F59E0B', 'MIỀN NAM':'#10B981'})
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.subheader("🔧 Top 10 Linh kiện lỗi")
+            top_lk = df_final['LINH_KIỆN'].value_counts().head(10)
+            st.bar_chart(top_lk)
 
-        st.divider()
-        st.subheader("🔧 Phân tích Linh kiện lỗi")
-        top_lk = df_view['LINH_KIỆN'].value_counts().head(15).sort_values(ascending=True)
-        fig_bar = px.bar(top_lk, orientation='h', text_auto=True, 
-                         color=top_lk.values, color_continuous_scale='Blues')
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-    with t2:
-        st.subheader("⚠️ Danh sách thiết bị có rủi ro cao")
+    with tab2:
+        st.subheader("🚩 THIẾT BỊ HỎNG TRÊN 1 LẦN (NĂM 2026)")
         if not re_fail.empty:
             bl_rows = []
             for m_id, count in re_fail.items():
-                m_info = df_view[df_view['MÃ_MÁY'] == m_id]
-                status = "🚨 CỰC NẶNG" if count >= 3 else "⚠️ CẢNH BÁO"
+                m_info = df_final[df_final['MÃ_MÁY'] == m_id]
                 bl_rows.append({
                     "Mã Máy": m_id,
-                    "Tình trạng": status,
                     "Số lần hỏng": count,
-                    "Đơn vị sử dụng": m_info['KHÁCH_HÀNG'].iloc[0],
-                    "Linh kiện đã thay": " | ".join(m_info['LINH_KIỆN'].unique())
+                    "Khách hàng": m_info['KHÁCH_HÀNG'].iloc[0],
+                    "Vùng": m_info['VÙNG'].iloc[0],
+                    "Các linh kiện lỗi": " | ".join(m_info['LINH_KIỆN'].unique())
                 })
-            st.dataframe(pd.DataFrame(bl_rows).sort_values("Số lần hỏng", ascending=False), 
-                         use_container_width=True, hide_index=True)
+            st.table(pd.DataFrame(bl_rows).sort_values("Số lần hỏng", ascending=False))
         else:
-            st.success("Hệ thống vận hành tốt, chưa ghi nhận máy hỏng tái diễn.")
+            st.success("Không có máy hỏng tái diễn trong dữ liệu 2026.")
 
-    with t3:
-        search_col1, search_col2 = st.columns([1, 2])
-        with search_col1:
-            search_query = st.text_input("🔍 Nhập Mã máy hoặc Tên đơn vị:")
-        if search_query:
-            results = df_view[df_view.astype(str).apply(lambda x: x.str.contains(search_query, case=False)).any(axis=1)]
-            st.write(f"Tìm thấy {len(results)} bản ghi phù hợp:")
-            st.table(results[['NGÀY', 'MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN', 'VÙNG']])
-
-    with t4:
-        st.write(f"Toàn bộ {len(df_view)} bản ghi đã được làm sạch và chuẩn hóa:")
-        st.dataframe(df_view, use_container_width=True, hide_index=True)
+    with tab3:
+        st.write("Dữ liệu 2026 đã được lọc sạch hoàn toàn:")
+        st.dataframe(df_final[['NGÀY', 'MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN', 'VÙNG']], use_container_width=True)
