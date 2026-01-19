@@ -6,7 +6,7 @@ import time
 st.set_page_config(page_title="AI QUẢN TRỊ 3651 DÒNG - V45", layout="wide")
 
 # 2. THAY LINK CSV MỚI CỦA SẾP VÀO ĐÂY
-DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTICh1STov8V7hgISiz09xJ-rrkd1aRrtMy7yV4b18nOcE6ITWIhAiDHy6zvmYf6A/pub?output=csv"
+DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
 @st.cache_data(ttl=1)
 def load_data_v45():
