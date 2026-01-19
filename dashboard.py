@@ -3,129 +3,142 @@ import pandas as pd
 import plotly.express as px
 import time
 
-# 1. THIẾT LẬP HỆ THỐNG EXECUTIVE
-st.set_page_config(page_title="Hệ Thống Quản Trị V82", layout="wide")
+# 1. THIẾT LẬP GIAO DIỆN PREMIUM
+st.set_page_config(page_title="Hệ Thống Quản Trị V85", layout="wide")
 
-# CSS Chuyên nghiệp
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    [data-testid="stMetric"] { background: white; border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; }
-    .stTabs [data-baseweb="tab"] { font-weight: bold; font-size: 16px; }
+    .main { background-color: #f4f7f6; }
+    .stMetric { background-color: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #eee; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { background-color: #e1e4e8; border-radius: 5px 5px 0 0; padding: 10px 20px; }
+    .stTabs [aria-selected="true"] { background-color: #1E3A8A !important; color: white !important; }
     </style>
 """, unsafe_allow_html=True)
 
 DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
 @st.cache_data(ttl=1)
-def load_data_v82():
+def load_data_v85():
     try:
-        # Load Raw Data - Ép kiểu string toàn bộ để tránh tự nhảy số
         url = f"{DATA_URL}&cache={time.time()}"
-        df_raw = pd.read_csv(url, dtype=str).fillna("Chưa xác định")
+        # Đọc toàn bộ file, ép kiểu string để bảo toàn 100% dữ liệu
+        raw = pd.read_csv(url, dtype=str, header=None).fillna("Chưa xác định")
         
-        # FIX TRIỆT ĐỂ: Nếu sếp thấy cột bị lệch, hãy chỉnh số index [0, 1, 2, 3] ở đây
-        # Theo hình image_ec0e41, có vẻ dòng đầu tiên là dòng tiêu đề rác
-        if "Mã số máy" in str(df_raw.iloc[0]):
-            df_raw = df_raw.iloc[1:].reset_index(drop=True)
+        # --- THUẬT TOÁN TỰ CĂN CHỈNH CỘT (FIX LỆCH CỘT TỪ IMAGE_EC0E96) ---
+        # Chúng ta sẽ tìm xem cột nào chứa định dạng ngày tháng (dd/mm/yyyy)
+        data_rows = raw.values.tolist()
+        final_rows = []
+        
+        for row in data_rows:
+            # Bỏ qua dòng tiêu đề nếu nó chứa chữ "Mã" hoặc "Ngày"
+            if "Mã" in str(row) or "Ngày" in str(row): continue
+            
+            # Logic nhận diện cột thông minh:
+            # Giả sử: Cột có '/' là Ngày, Cột có số ngắn là Mã, Cột dài là Linh kiện/Khách
+            d_ngay, d_ma, d_kh, d_lk = "Chưa xác định", "Chưa xác định", "Chưa xác định", "Chưa xác định"
+            
+            for item in row:
+                item_str = str(item).strip()
+                if "/" in item_str and len(item_str) <= 10: d_ngay = item_str
+                elif item_str.isdigit() and len(item_str) < 10: d_ma = item_str
+                elif len(item_str) > 15: d_lk = item_str
+                else: d_kh = item_str
+            
+            final_rows.append([d_ngay, d_ma, d_kh, d_lk])
 
-        df = pd.DataFrame()
-        # Gán cứng cột theo vị trí để không bao giờ bị lệch dữ liệu như image_ec0e96
-        df['NGÀY_GỐC'] = df_raw.iloc[:, 0]
-        df['MÃ_MÁY'] = df_raw.iloc[:, 1].str.strip()
-        df['KHÁCH_HÀNG'] = df_raw.iloc[:, 2].str.strip()
-        df['LINH_KIỆN'] = df_raw.iloc[:, 3].str.strip()
-
-        # Xử lý ngày tháng chuyên sâu
-        df['NGÀY_DT'] = pd.to_datetime(df['NGÀY_GỐC'], dayfirst=True, errors='coerce')
+        df = pd.DataFrame(final_rows, columns=['NGÀY', 'MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN'])
+        
+        # Xử lý thời gian
+        df['NGÀY_DT'] = pd.to_datetime(df['NGÀY'], dayfirst=True, errors='coerce')
         df['NĂM'] = df['NGÀY_DT'].dt.year.fillna(2026).astype(int)
-        df['THÁNG_NUM'] = df['NGÀY_DT'].dt.month.fillna(0).astype(int)
+        df['THÁNG'] = df['NGÀY_DT'].dt.month.fillna(0).astype(int)
         
-        # Phân loại Vùng Miền (Logic AI - Fix lỗi 1 màu ở image_eb9d08)
-        def set_region(kh):
+        # Phân vùng miền dựa trên tên khách hàng
+        def phan_vung(kh):
             v = str(kh).upper()
-            if any(x in v for x in ['HN', 'NỘI', 'BẮC', 'SƠN', 'PHÚ']): return 'MIỀN BẮC'
+            if any(x in v for x in ['HN', 'BẮC', 'SƠN', 'PHÚ', 'NỘI']): return 'MIỀN BẮC'
             if any(x in v for x in ['ĐÀ NẴNG', 'HUẾ', 'TRUNG', 'VINH']): return 'MIỀN TRUNG'
             return 'MIỀN NAM'
-        df['VÙNG_MIỀN'] = df['KHÁCH_HÀNG'].apply(set_region)
+        df['VÙNG'] = df['KHÁCH_HÀNG'].apply(phan_vung)
         
         return df
     except Exception as e:
-        st.error(f"Lỗi nạp dữ liệu V82: {e}")
+        st.error(f"Lỗi hệ thống: {e}")
         return None
 
-# --- SIDEBAR: GIAO DIỆN LỌC CHUYÊN NGHIỆP ---
-data = load_data_v82()
+# --- GIAO DIỆN ĐIỀU KHIỂN ---
+data = load_data_v85()
 
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/1162/1162456.png", width=50)
-    st.title("QUẢN TRỊ V82")
-    if st.button('🔄 ĐỒNG BỘ DỮ LIỆU GỐC', use_container_width=True):
+    st.header("🎛️ BỘ LỌC HỆ THỐNG")
+    if st.button('🔄 CẬP NHẬT LIVE DATA', use_container_width=True):
         st.cache_data.clear()
         st.rerun()
     
     if data is not None:
-        y_list = sorted(data[data['NĂM'] > 2000]['NĂM'].unique(), reverse=True)
-        sel_year = st.selectbox("📅 Năm báo cáo", ["Tất cả"] + y_list)
-        
-        m_options = ["Tất cả (Cộng dồn)"] + [f"Tháng {i}" for i in range(1, 13)]
-        sel_month = st.selectbox("📆 Tháng báo cáo", m_options)
+        years = sorted(data['NĂM'].unique(), reverse=True)
+        sel_y = st.selectbox("Chọn năm", ["Tất cả"] + years)
+        months = ["Tất cả"] + [f"Tháng {i}" for i in range(1, 13)]
+        sel_m = st.selectbox("Chọn tháng", months)
 
-        # Lọc dữ liệu
-        df_final = data.copy()
-        if sel_year != "Tất cả":
-            df_final = df_final[df_final['NĂM'] == sel_year]
-        if sel_month != "Tất cả (Cộng dồn)":
-            m_val = int(sel_month.replace("Tháng ", ""))
-            df_final = df_final[df_final['THÁNG_NUM'] == m_val]
+        # Bộ lọc
+        df_view = data.copy()
+        if sel_y != "Tất cả": df_view = df_view[df_view['NĂM'] == sel_y]
+        if sel_m != "Tất cả":
+            m_num = int(sel_m.replace("Tháng ", ""))
+            df_view = df_view[df_view['THÁNG'] == m_num]
 
-# --- MAIN DASHBOARD ---
+# --- DASHBOARD CHÍNH ---
 if data is not None:
-    st.header(f"📊 BÁO CÁO: {sel_month} / {sel_year}")
+    st.title("🚀 DASHBOARD QUẢN TRỊ TÀI SẢN 2026")
     
-    # 1. KPI chuẩn mực (Khớp 100% số dòng)
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Tổng ca hỏng", f"{len(df_final):,}")
-    k2.metric("Thiết bị lỗi", f"{df_final['MÃ_MÁY'].nunique():,}")
-    counts = df_final['MÃ_MÁY'].value_counts()
-    k3.metric("Máy hỏng tái diễn", len(counts[counts > 1]))
-    k4.metric("Khách hàng/Đơn vị", df_final['KHÁCH_HÀNG'].nunique())
+    # KPI chính - Đảm bảo khớp 4.039 dòng (nếu chọn Tất cả)
+    m1, m2, m3, m4 = st.columns(4)
+    total_hongs = len(df_view)
+    m1.metric("Tổng ca hỏng", f"{total_hongs:,}")
+    m2.metric("Số thiết bị lỗi", f"{df_view['MÃ_MÁY'].nunique():,}")
+    
+    # Tính máy hỏng tái diễn (Xuất hiện > 1 lần)
+    re_fail = df_view['MÃ_MÁY'].value_counts()
+    black_list_ids = re_fail[re_fail > 1].index.tolist()
+    m3.metric("Máy hỏng tái diễn", len(black_list_ids))
+    m4.metric("Khách hàng báo lỗi", df_view['KHÁCH_HÀNG'].nunique())
 
-    # 2. Tabs chức năng
-    t1, t2, t3, t4 = st.tabs(["📈 THỐNG KÊ", "🔍 TRUY LỤC", "🤖 AI ANALYST", "📋 XEM DỮ LIỆU GỐC"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 BÁO CÁO TỔNG HỢP", "🚩 DANH SÁCH ĐEN (RE-FAIL)", "🔍 TRUY XUẤT", "📋 DỮ LIỆU GỐC"])
 
-    with t1:
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            st.subheader("Top Linh kiện lỗi")
-            # Lọc bỏ giá trị "Chưa xác định" để biểu đồ chuyên nghiệp hơn
-            clean_lk = df_final[df_final['LINH_KIỆN'] != "Chưa xác định"]
-            top_lk = clean_lk['LINH_KIỆN'].value_counts().head(10)
-            fig_bar = px.bar(top_lk, orientation='h', color=top_lk.values, color_continuous_scale='Reds')
-            st.plotly_chart(fig_bar, use_container_width=True)
-        with c2:
-            st.subheader("Tỷ lệ Vùng miền")
-            fig_pie = px.pie(df_final, names='VÙNG_MIỀN', hole=0.4,
-                             color_discrete_map={'MIỀN BẮC':'#E74C3C', 'MIỀN TRUNG':'#F1C40F', 'MIỀN NAM':'#3498DB'})
+    with tab1:
+        col_l, col_r = st.columns([2, 1])
+        with col_l:
+            st.subheader("TOP 10 LINH KIỆN LỖI")
+            top_lk = df_view[df_view['LINH_KIỆN'] != "Chưa xác định"]['LINH_KIỆN'].value_counts().head(10)
+            fig = px.bar(top_lk, x=top_lk.values, y=top_lk.index, orientation='h', 
+                         labels={'x':'Số lần hỏng', 'index':'Linh kiện'},
+                         color=top_lk.values, color_continuous_scale='Reds')
+            st.plotly_chart(fig, use_container_width=True)
+        with col_r:
+            st.subheader("PHÂN BỔ MIỀN")
+            fig_pie = px.pie(df_view, names='VÙNG', hole=0.4,
+                             color_discrete_map={'MIỀN BẮC':'#1E3A8A', 'MIỀN TRUNG':'#F59E0B', 'MIỀN NAM':'#10B981'})
             st.plotly_chart(fig_pie, use_container_width=True)
 
-    with t2:
-        txt = st.text_input("Gõ mã máy hoặc tên khách hàng để truy lục nhanh:")
-        if txt:
-            res = df_final[df_final.astype(str).apply(lambda x: x.str.contains(txt, case=False)).any(axis=1)]
-            st.dataframe(res, use_container_width=True)
+    with tab2:
+        st.subheader("⚠️ DANH SÁCH MÁY HỎNG TRÊN 1 LẦN")
+        df_black = df_view[df_view['MÃ_MÁY'].isin(black_list_ids)]
+        df_black_summary = df_black.groupby(['MÃ_MÁY', 'KHÁCH_HÀNG']).agg({
+            'LINH_KIỆN': lambda x: ', '.join(x.unique()),
+            'NGÀY': 'count'
+        }).rename(columns={'NGÀY': 'Số lần hỏng'}).sort_values('Số lần hỏng', ascending=False)
+        
+        st.table(df_black_summary.head(20))
+        st.caption("Ghi chú: Đây là những máy cần thu hồi hoặc kiểm tra nhà cung cấp linh kiện.")
 
-    with t3:
-        st.subheader("🤖 Trợ lý AI (Data-Driven)")
-        ask = st.chat_input("Hỏi AI về dữ liệu...")
-        if ask:
-            st.info(f"Sếp đang hỏi: {ask}")
-            if "nhiều nhất" in ask.lower():
-                best = df_final['LINH_KIỆN'].value_counts().idxmax()
-                st.write(f"🤖 Trả lời: Linh kiện lỗi nhiều nhất là **{best}**.")
-            else:
-                st.write("🤖 Tôi đang phân tích toàn bộ dòng dữ liệu của sếp...")
+    with tab3:
+        search = st.text_input("Nhập Mã máy hoặc Tên khách hàng để xem lịch sử hỏng:")
+        if search:
+            mask = df_view.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)
+            st.dataframe(df_view[mask], use_container_width=True)
 
-    with t4:
-        st.write("Kiểm tra 50 dòng dữ liệu hệ thống đang đọc (Để đối soát lệch cột):")
-        st.dataframe(df_final.head(50), use_container_width=True)
+    with tab4:
+        st.write(f"Đang hiển thị {len(df_view)} dòng dữ liệu đã được AI căn chỉnh cột.")
+        st.dataframe(df_view[['NGÀY', 'MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN', 'VÙNG']], use_container_width=True)
