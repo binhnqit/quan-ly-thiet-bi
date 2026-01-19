@@ -2,118 +2,111 @@ import streamlit as st
 import pandas as pd
 import time
 
-# 1. CẤU HÌNH GIAO DIỆN
-st.set_page_config(page_title="Hệ Thống AI 3651 - V57", layout="wide")
+# 1. CẤU HÌNH
+st.set_page_config(page_title="Hệ Thống AI 3651 - V58", layout="wide")
 
-# LINK CSV TỔNG CỦA SẾP
+# LINK CSV (Sếp giữ nguyên link này)
 DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
 @st.cache_data(ttl=1)
-def load_data_v57():
+def load_data_v58():
     try:
+        # Ép Google trả về dữ liệu mới nhất
         url = f"{DATA_URL}&cache={time.time()}"
-        # Đọc dữ liệu thô, ép kiểu chuỗi
+        # Đọc toàn bộ file dưới dạng văn bản để không bị lỗi định dạng
         df = pd.read_csv(url, on_bad_lines='skip', dtype=str).fillna("")
         
         if df.empty: return None
 
-        # CHUẨN HÓA TÊN CỘT
-        df.columns = [str(c).strip().upper() for c in df.columns]
-        
-        # HÀM TÌM CỘT THÔNG MINH (Dò theo nội dung thực tế bên trong ô)
-        def find_col_by_content(df, keywords):
+        # CHẾ ĐỘ QUÉT SIÊU VIỆT: Tìm cột theo từ khóa nội dung
+        def find_col_by_keywords(df, keywords):
             for col in df.columns:
-                # Kiểm tra 20 dòng đầu của mỗi cột xem có chứa từ khóa không
-                sample = " ".join(df[col].head(20).astype(str).upper())
-                if any(k in sample for k in keywords):
+                # Kiểm tra nội dung 50 dòng đầu của cột
+                content_sample = " ".join(df[col].astype(str).head(50)).upper()
+                if any(k in content_sample for k in keywords):
                     return col
             return None
 
-        # 1. Tìm cột Mã Máy (Chứa số hiệu thiết bị)
-        c_ma = find_col_by_content(df, ['3534', '1102', 'LAPTOP'])
-        if not c_ma: c_ma = df.columns[1] # Mặc định cột 2
+        # Tìm cột dựa trên dữ liệu thực tế sếp nhập
+        col_ma = find_col_by_keywords(df, ['3534', '1102', 'LAPTOP', 'MÃ']) or df.columns[1]
+        col_ly = find_col_by_keywords(df, ['LỖI', 'THAY', 'HỎNG', 'SỬA', 'YẾU']) or df.columns[3]
+        col_ng = find_col_by_keywords(df, ['2023', '2024', '2025', '2026']) or df.columns[0]
 
-        # 2. Tìm cột Lý Do (Chứa các từ liên quan đến hỏng hóc)
-        c_ly = find_col_by_content(df, ['LỖI', 'HỎNG', 'THAY', 'SỬA', 'YẾU', 'LIỆT'])
-        if not c_ly: c_ly = df.columns[3] # Mặc định cột 4
-
-        # 3. Tìm cột Ngày
-        c_ng = find_col_by_content(df, ['2023', '2024', '2025', '2026', '/'])
-        if not c_ng: c_ng = df.columns[6] # Mặc định cột 7
-
-        # XỬ LÝ DỮ LIỆU SẠCH
-        res_df = pd.DataFrame()
-        res_df['MÃ_MÁY'] = df[c_ma].astype(str).str.split('.').str[0].str.strip()
-        res_df['LÝ_DO'] = df[c_ly].astype(str).str.strip()
-        res_df['NGÀY_GỐC'] = pd.to_datetime(df[c_ng], dayfirst=True, errors='coerce')
+        # Tạo bảng dữ liệu chuẩn
+        clean_df = pd.DataFrame()
+        clean_df['MÃ_MÁY'] = df[col_ma].astype(str).str.split('.').str[0].str.strip()
+        clean_df['LÝ_DO'] = df[col_ly].astype(str).str.strip()
+        clean_df['NGÀY_GỐC'] = pd.to_datetime(df[col_ng], dayfirst=True, errors='coerce')
         
-        # Lọc bỏ dòng tiêu đề trang trí hoặc dòng trống
-        res_df = res_df[res_df['MÃ_MÁY'].str.len() > 2].copy()
+        # LỌC BỎ DỮ LIỆU NHIỄU (Tên hãng máy đang làm hỏng biểu đồ)
+        hang_may = ['HP', 'DELL', 'ASUS', 'LENOVO', 'ACER', 'APPLE', 'MACBOOK', 'TOSHIBA']
+        clean_df = clean_df[~clean_df['LÝ_DO'].str.upper().isin(hang_may)]
         
-        # Loại bỏ các dòng mà "Lý do" bị nhầm sang Tên Hãng (HP, DELL, ASUS...)
-        hang_may = ['HP', 'DELL', 'ASUS', 'LENOVO', 'ACER', 'APPLE', 'MACBOOK']
-        res_df = res_df[~res_df['LÝ_DO'].str.upper().isin(hang_may)]
-
-        res_df['NĂM'] = res_df['NGÀY_GỐC'].dt.year.fillna(2026).astype(int)
-        res_df['THÁNG'] = res_df['NGÀY_GỐC'].dt.month.fillna(1).astype(int)
+        # Chỉ lấy những dòng có mã máy thực sự (độ dài > 2)
+        clean_df = clean_df[clean_df['MÃ_MÁY'].str.len() > 2].copy()
         
-        return res_df
+        # Thêm cột thời gian
+        clean_df['NĂM'] = clean_df['NGÀY_GỐC'].dt.year.fillna(2026).astype(int)
+        clean_df['THÁNG'] = clean_df['NGÀY_GỐC'].dt.month.fillna(1).astype(int)
+        
+        return clean_df
     except Exception as e:
-        st.error(f"Lỗi nạp dữ liệu: {e}")
+        st.error(f"Lỗi hệ thống: {e}")
         return None
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ BỘ LỌC DỮ LIỆU")
-    if st.button('🔄 LÀM MỚI (FOR 3.651 DÒNG)'):
+    st.header("⚙️ BỘ LỌC HỆ THỐNG")
+    if st.button('🔄 LÀM MỚI 3.651 DÒNG'):
         st.cache_data.clear()
         st.rerun()
     
-    data = load_data_v57()
+    data = load_data_v58()
     if data is not None:
         st.success(f"✅ Đã kết nối {len(data)} dòng")
         
-        list_năm = sorted([y for y in data['NĂM'].unique() if y > 2000], reverse=True)
-        sel_year = st.selectbox("📅 Chọn Năm", ["Tất cả"] + list_năm)
-        
+        # Lọc Năm & Tháng
+        y_list = sorted([y for y in data['NĂM'].unique() if y > 2020], reverse=True)
+        sel_year = st.selectbox("📅 Chọn Năm", ["Tất cả"] + y_list)
         sel_month = st.selectbox("📆 Chọn Tháng", ["Tất cả"] + [f"Tháng {i}" for i in range(1, 13)])
         
-        df_filtered = data.copy()
-        if sel_year != "Tất cả": df_filtered = df_filtered[df_filtered['NĂM'] == int(sel_year)]
+        df_display = data.copy()
+        if sel_year != "Tất cả": df_display = df_display[df_display['NĂM'] == int(sel_year)]
         if sel_month != "Tất cả":
             m_num = int(sel_month.split(" ")[1])
-            df_filtered = df_filtered[df_filtered['THÁNG'] == m_num]
+            df_display = df_display[df_display['THÁNG'] == m_num]
     else:
-        df_filtered = pd.DataFrame()
+        df_display = pd.DataFrame()
 
-# --- GIAO DIỆN ---
-st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ QUẢN TRỊ TÀI SẢN CHI TIẾT 2026</h1>', unsafe_allow_html=True)
+# --- GIAO DIỆN CHÍNH ---
+st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ QUẢN TRỊ LIVE DATA 3.651</h1>', unsafe_allow_html=True)
 
-if not df_filtered.empty:
-    # THỐNG KÊ NHANH
+if not df_display.empty:
+    # HIỂN THỊ CHỈ SỐ
     c1, c2, c3 = st.columns(3)
-    c1.metric("Tổng ca hỏng", len(df_filtered))
-    c2.metric("Số thiết bị", df_filtered['MÃ_MÁY'].nunique())
+    c1.metric("Tổng ca hỏng", len(df_display))
+    c2.metric("Số thiết bị", df_display['MÃ_MÁY'].nunique())
     
-    # Máy hỏng nặng (Xuất hiện > 4 lần trong dữ liệu)
-    bad_list = data['MÃ_MÁY'].value_counts()
-    c3.metric("Máy hỏng nặng (>4 lần)", len(bad_list[bad_list > 4]))
+    # Tính máy hỏng nặng (> 3 lần)
+    heavy_fix = data['MÃ_MÁY'].value_counts()
+    c3.metric("Máy hỏng nặng (>3 lần)", len(heavy_fix[heavy_fix > 3]))
 
-    tab1, tab2 = st.tabs(["📊 BIỂU ĐỒ LỖI LINH KIỆN", "🔍 TRUY LỤC LỊCH SỬ"])
+    tab1, tab2 = st.tabs(["📊 BIỂU ĐỒ LỖI LINH KIỆN", "🔍 TRA CỨU MÃ MÁY"])
     
     with tab1:
-        st.subheader("🛠️ Top 10 linh kiện/lỗi phổ biến nhất")
-        # Chỉ lấy những lý do thực sự là lỗi (loại bỏ các ô trống hoặc tên hãng)
-        clean_reasons = df_filtered[df_filtered['LÝ_DO'].str.len() > 3]['LÝ_DO'].value_counts().head(10)
-        if not clean_reasons.empty:
-            st.bar_chart(clean_reasons)
+        st.subheader("🛠️ Top 10 linh kiện lỗi nhiều nhất")
+        # Chỉ lấy các lý do có nội dung thật sự
+        chart_data = df_display[df_display['LÝ_DO'].str.len() > 3]['LÝ_DO'].value_counts().head(10)
+        if not chart_data.empty:
+            st.bar_chart(chart_data)
         else:
-            st.info("Chưa đủ dữ liệu để vẽ biểu đồ lỗi.")
+            st.info("Chưa có dữ liệu lỗi để vẽ biểu đồ.")
 
     with tab2:
-        q = st.text_input("Nhập Mã máy để kiểm tra lịch sử (VD: 3534):")
+        q = st.text_input("Nhập mã máy (Ví dụ: 3534):")
         if q:
-            res = data[data['MÃ_MÁY'].str.contains(q, na=False)]
-            st.dataframe(res[['NGÀY_GỐC', 'MÃ_MÁY', 'LÝ_DO']].sort_values('NGAY_GỐC', ascending=False), use_container_width=True)
+            # Tìm trên toàn bộ dữ liệu gốc
+            search_res = data[data['MÃ_MÁY'].str.contains(q, na=False)]
+            st.dataframe(search_res[['NGÀY_GỐC', 'MÃ_MÁY', 'LÝ_DO']].sort_values('NGAY_GỐC', ascending=False), use_container_width=True)
 else:
-    st.info("💡 Hệ thống đang tải dữ liệu. Sếp hãy nhấn nút 'LÀM MỚI' nếu dữ liệu chưa hiện đủ 3.651 dòng.")
+    st.info("💡 Đang nạp dữ liệu từ Google Sheets. Sếp hãy đợi vài giây...")
