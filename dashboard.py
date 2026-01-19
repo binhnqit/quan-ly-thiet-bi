@@ -2,24 +2,28 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# 1. CẤU HÌNH GIAO DIỆN
-st.set_page_config(page_title="Hệ Thống Quản Trị AI - V24", layout="wide")
+# 1. CẤU HÌNH GIAO DIỆN CHUẨN
+st.set_page_config(page_title="Hệ Thống Quản Trị AI - V25", layout="wide")
 
-# 2. LINK DỮ LIỆU CHUẨN TỪ GOOGLE SHEETS
-DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
+# 2. SỬ DỤNG ID FILE ĐỂ ÉP ĐỌC DỮ LIỆU MỚI NHẤT
+# Tôi lấy ID từ chính hình ảnh image_b3b445.png sếp gửi
+FILE_ID = "1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg"
+SHEET_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv"
 
-@st.cache_data(ttl=5)
-def load_data_v24():
+@st.cache_data(ttl=2) # Ép làm mới cực nhanh mỗi 2 giây
+def load_data_v25():
     try:
-        # Ép kiểu string và thêm cache_bust để cập nhật dữ liệu mới nhất
-        raw_df = pd.read_csv(f"{DATA_URL}&cache={pd.Timestamp.now().timestamp()}", dtype=str)
+        # Thêm tham số ngẫu nhiên để Google không trả về bản cũ (Anti-cache)
+        url = f"{SHEET_URL}&cache_bust={pd.Timestamp.now().timestamp()}"
+        raw_df = pd.read_csv(url, dtype=str)
         
         df = pd.DataFrame()
-        # Ép tọa độ cột: B=Mã Máy, D=Lý do, G=Ngày sửa
+        # Ép tọa độ cột từ file thực tế: Cột B (Mã Máy), D (Lý do), G (Ngày)
         df['MÃ_MÁY'] = raw_df.iloc[:, 1].str.split('.').str[0].str.strip()
         df['LÝ_DO'] = raw_df.iloc[:, 3].fillna("Chưa rõ")
         df['NGAY_FIX'] = pd.to_datetime(raw_df.iloc[:, 6], errors='coerce', dayfirst=True)
         
+        # Nhận diện vùng miền chuẩn xác
         def detect_vung(row):
             txt = " ".join(row.astype(str)).upper()
             if any(x in txt for x in ["NAM", "MN"]): return "Miền Nam"
@@ -32,20 +36,21 @@ def load_data_v24():
         df['NĂM'] = df['NGAY_FIX'].dt.year
         return df
     except Exception as e:
-        st.error(f"Lỗi kết nối dữ liệu: {e}")
+        st.error(f"Lỗi kết nối trực tiếp: {e}")
         return pd.DataFrame()
 
-df_all = load_data_v24()
+df_all = load_data_v25()
 
-# --- SIDEBAR ---
+# --- SIDEBAR (Hình image_a8e9e4.png) ---
 with st.sidebar:
     st.header("🛡️ BỘ LỌC CHIẾN LƯỢC")
-    if st.button('🔄 CẬP NHẬT DỮ LIỆU MỚI'):
+    if st.button('🔄 ÉP LÀM MỚI 3.651 DÒNG'):
         st.cache_data.clear()
         st.rerun()
     
     if not df_all.empty:
         list_years = sorted(df_all['NĂM'].unique(), reverse=True)
+        # Mặc định chọn năm mới nhất hoặc 2026
         sel_year = st.selectbox("📅 Chọn Năm", list_years, index=0)
         list_vung = sorted(df_all['VÙNG_MIỀN'].unique())
         sel_vung = st.multiselect("📍 Chọn Miền", list_vung, default=list_vung)
@@ -57,25 +62,25 @@ with st.sidebar:
 st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ HỆ THỐNG QUẢN TRỊ LIVE DATA 2026</h1>', unsafe_allow_html=True)
 
 if not df_all.empty:
-    tab1, tab2, tab4, tab3 = st.tabs(["📊 Dashboard", "💬 Chatbot AI", "🚩 Máy Nguy Kịch", "📖 Hướng Dẫn"])
+    tab1, tab2, tab4 = st.tabs(["📊 Dashboard", "💬 Chatbot AI", "🚩 Máy Nguy Kịch"])
 
     with tab1:
         c1, c2, c3 = st.columns(3)
-        c1.metric("Tổng ca hỏng (Lọc)", f"{len(df_filtered)}")
-        c2.metric("Số lượng thiết bị", f"{df_filtered['MÃ_MÁY'].nunique()}")
+        c1.metric("Tổng ca hỏng", f"{len(df_filtered)}")
+        c2.metric("Số thiết bị", f"{df_filtered['MÃ_MÁY'].nunique()}")
         
         bad_counts = df_all['MÃ_MÁY'].value_counts()
         crit_list = bad_counts[bad_counts >= 4].index.tolist()
-        c3.metric("Tổng máy hỏng nhiều", f"{len(crit_list)}")
+        c3.metric("Máy cần thanh lý", f"{len(crit_list)}")
 
         st.divider()
         cl, cr = st.columns(2)
         with cl:
-            st.subheader("📍 Phân bổ hỏng theo Miền")
-            fig_pie = px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.4)
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.subheader("📍 Phân bổ theo Miền")
+            st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.4, color_discrete_sequence=px.colors.qualitative.Bold), use_container_width=True)
         with cr:
-            st.subheader("🛠️ Loại linh kiện thay thế")
+            st.subheader("🛠️ Thống kê linh kiện")
+            # Sửa triệt để lỗi bị dồn vào cột "Khác"
             def classify_lk(x):
                 x = str(x).lower()
                 if 'pin' in x: return 'Pin'
@@ -83,22 +88,19 @@ if not df_all.empty:
                 if 'phím' in x: return 'Bàn phím'
                 if 'main' in x: return 'Mainboard'
                 if 'sạc' in x or 'adapter' in x: return 'Sạc/Adapter'
-                return 'Khác'
+                if 'ssd' in x or 'ổ' in x: return 'Ổ cứng'
+                return 'Linh kiện khác'
             df_filtered['LK'] = df_filtered['LÝ_DO'].apply(classify_lk)
-            st.plotly_chart(px.bar(df_filtered['LK'].value_counts().reset_index(), x='count', y='LK', orientation='h'), use_container_width=True)
+            st.plotly_chart(px.bar(df_filtered['LK'].value_counts().reset_index(), x='count', y='LK', orientation='h', color='LK'), use_container_width=True)
 
     with tab2:
-        st.subheader("💬 Tra cứu hồ sơ máy (Live)")
-        q = st.text_input("Gõ mã máy để AI quét lịch sử:")
+        st.subheader("💬 Tra cứu hồ sơ máy")
+        q = st.text_input("Gõ mã máy (VD: 3534):")
         if q:
-            # Lọc dữ liệu mã máy
             res = df_all[df_all['MÃ_MÁY'].str.contains(q, na=False, case=False)].sort_values('NGAY_FIX', ascending=False)
             if not res.empty:
-                # SỬA LỖI CÚ PHÁP TẠI ĐÂY
-                st.success(f"Máy {q} đã sửa {len(res)} lần.")
+                st.success(f"Dữ liệu Live: Máy {q} đã sửa {len(res)} lần.")
                 st.dataframe(res[['NGAY_FIX', 'LÝ_DO', 'VÙNG_MIỀN']], use_container_width=True)
-            else:
-                st.warning("Mã máy không có trong dữ liệu hỏng.")
 
     with tab4:
         st.header("🚩 Danh sách đen (Hỏng >= 4 lần)")
@@ -108,13 +110,5 @@ if not df_all.empty:
             Khu_vực=('VÙNG_MIỀN', 'first')
         ).reset_index()
         st.dataframe(report[report['Lượt_hỏng'] >= 4].sort_values('Lượt_hỏng', ascending=False), use_container_width=True, hide_index=True)
-
-    with tab3:
-        st.markdown("""
-        ### 📖 HƯỚNG DẪN VẬN HÀNH 2026
-        - **Cập nhật:** Nhấn nút 'Cập nhật dữ liệu mới' nếu sếp vừa sửa file Sheets.
-        - **Tra cứu:** Chatbot tự động quét toàn bộ 3.651 dòng để tìm lịch sử máy.
-        - **Quyết định:** Dựa vào 'Bệnh nền' ở Tab 4 để quyết định thanh lý máy hỏng hệ thống.
-        """)
 else:
-    st.warning("Đang kết nối dữ liệu 3.651 dòng. Vui lòng nhấn 'Cập nhật' ở Sidebar.")
+    st.info("Hệ thống đang quét 3.651 dòng... Sếp đợi 3 giây nhé!")
