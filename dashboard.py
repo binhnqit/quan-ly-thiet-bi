@@ -2,120 +2,110 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import time
-import random
 
-# 1. CẤU HÌNH
-st.set_page_config(page_title="Hệ Thống AI 3651 Dòng - V43", layout="wide")
+# 1. CẤU HÌNH GIAO DIỆN
+st.set_page_config(page_title="Hệ Thống Quản Trị AI - V44", layout="wide")
 
-# LINK CSV CỦA SẾP
+# 2. DÁN LINK CSV MỚI CỦA SẾP VÀO ĐÂY (Link kết thúc bằng =csv)
 DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
-@st.cache_data(ttl=2) # Giảm thời gian nhớ xuống còn 2 giây để luôn tươi mới
-def load_data_v43(url):
+@st.cache_data(ttl=1) # Ép tải mới liên tục
+def load_data_v44():
     try:
-        # PHÁ CACHE: Thêm số ngẫu nhiên vào cuối link để ép Google đưa file mới nhất
-        cache_buster = f"&update={random.randint(1000, 9999)}"
-        df_raw = pd.read_csv(url + cache_buster, on_bad_lines='skip', dtype=str)
+        # Thêm mã phá cache cực mạnh
+        final_url = f"{DATA_URL}&cache_buster={time.time()}"
+        df = pd.read_csv(final_url, on_bad_lines='skip', dtype=str)
         
-        if df_raw.empty: return None
-
-        df = pd.DataFrame()
-        # Lấy dữ liệu cột 1 (Mã), 3 (Lý do), 6 (Ngày) - Sếp kiểm tra lại số thứ tự cột nhé
-        df['MÃ_MÁY'] = df_raw.iloc[:, 1].str.split('.').str[0].str.strip()
-        df['LÝ_DO'] = df_raw.iloc[:, 3].fillna("Không rõ")
+        # Làm sạch dữ liệu: Bỏ khoảng trắng trong tên cột
+        df.columns = [str(c).strip() for c in df.columns]
         
-        # XỬ LÝ NGÀY THÁNG SIÊU CẤP (Chấp nhận nhiều định dạng)
-        df['NGAY_FIX'] = pd.to_datetime(df_raw.iloc[:, 6], dayfirst=True, errors='coerce')
+        # TỰ ĐỘNG NHẬN DIỆN CỘT (Dù sếp có chèn thêm cột hay bớt cột)
+        # Chúng ta tìm cột chứa chữ "Mã" và "Lý do" hoặc "Nội dung"
+        col_ma = [c for c in df.columns if 'MÃ' in c.upper()][0]
+        col_lydo = [c for c in df.columns if 'LÝ DO' in c.upper() or 'NỘI DUNG' in c.upper()][0]
+        col_ngay = [c for c in df.columns if 'NGÀY' in c.upper()][0]
         
-        # Nếu dòng nào lỗi ngày, mặc định lấy năm 2026 để sếp vẫn thấy dữ liệu
-        df['NĂM'] = df['NGAY_FIX'].dt.year.fillna(2026).astype(int)
-        df['THÁNG_SO'] = df['NGAY_FIX'].dt.month.fillna(1).astype(int)
+        # Tạo bảng dữ liệu chuẩn
+        new_df = pd.DataFrame()
+        new_df['MÃ_MÁY'] = df[col_ma].str.split('.').str[0].str.strip()
+        new_df['LÝ_DO'] = df[col_lydo].fillna("Trống")
+        new_df['NGAY_FIX'] = pd.to_datetime(df[col_ngay], dayfirst=True, errors='coerce')
         
-        month_map = {1: "Tháng 1", 2: "Tháng 2", 3: "Tháng 3", 4: "Tháng 4", 5: "Tháng 5", 6: "Tháng 6",
-                     7: "Tháng 7", 8: "Tháng 8", 9: "Tháng 9", 10: "Tháng 10", 11: "Tháng 11", 12: "Tháng 12"}
-        df['THÁNG'] = df['THÁNG_SO'].map(month_map)
-
-        # Nhận diện vùng miền
-        def detect_vung(row):
-            txt = " ".join(row.astype(str)).upper()
-            if any(x in txt for x in ["NAM", "MN", "SG", "HCM"]): return "Miền Nam"
-            if any(x in txt for x in ["BẮC", "MB", "HN"]): return "Miền Bắc"
-            if any(x in txt for x in ["TRUNG", "ĐN", "DN"]): return "Miền Trung"
-            return "Văn Phòng"
+        # Xử lý Năm/Tháng
+        new_df['NĂM'] = new_df['NGAY_FIX'].dt.year.fillna(2026).astype(int)
+        new_df['THÁNG_SO'] = new_df['NGAY_FIX'].dt.month.fillna(1).astype(int)
         
-        df['VÙNG_MIỀN'] = df_raw.apply(detect_vung, axis=1)
-        df['SEARCH_KEY'] = df['MÃ_MÁY'].astype(str) + " " + df['LÝ_DO'].astype(str)
-        return df
+        # Gán vùng miền dựa trên nội dung dòng đó
+        def get_region(row):
+            text = " ".join(row.astype(str)).upper()
+            if any(x in text for x in ["NAM", "SG", "HCM"]): return "Miền Nam"
+            if any(x in text for x in ["BẮC", "HN", "MB"]): return "Miền Bắc"
+            return "Khác/Văn Phòng"
+            
+        new_df['VÙNG'] = df.apply(get_region, axis=1)
+        return new_df
     except Exception as e:
-        st.error(f"Lỗi tải dữ liệu: {e}")
+        st.error(f"Không tìm thấy cột chuẩn trong Sheets. Sếp kiểm tra tiêu đề cột nhé! ({e})")
         return None
 
-# NÚT BẤM CẬP NHẬT TẠI SIDEBAR
+# --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ QUẢN TRỊ")
-    if st.button('🔄 ÉP CẬP NHẬT 3.651 DÒNG'):
+    st.header("⚙️ ĐIỀU KHIỂN")
+    if st.button('🚀 ÉP ĐỒNG BỘ 3.651 DÒNG'):
         st.cache_data.clear()
         st.rerun()
 
-df_all = load_data_v43(DATA_URL)
+df_raw = load_data_v44()
 
-# --- BỘ LỌC CHI TIẾT ---
-if df_all is not None:
+if df_raw is not None:
     with st.sidebar:
-        st.success(f"✅ Đã kết nối {len(df_all)} dòng")
+        st.success(f"✅ Đã kết nối: {len(df_raw)} dòng")
         
-        # Lọc Năm
-        years_list = sorted(df_all['NĂM'].unique(), reverse=True)
-        sel_year = st.selectbox("📅 Chọn Năm", ["Tất cả"] + [int(y) for y in years_list])
+        years = ["Tất cả"] + sorted([int(y) for y in df_raw['NĂM'].unique()], reverse=True)
+        sel_year = st.selectbox("📅 Năm", years)
         
-        # Lọc Tháng
-        if sel_year == "Tất cả":
-            df_year = df_all
-        else:
-            df_year = df_all[df_all['NĂM'] == sel_year]
-            
-        months_list = ["Tất cả"] + sorted(df_year['THÁNG'].unique().tolist(), key=lambda x: int(x.split(" ")[1]))
-        sel_month = st.selectbox("📆 Chọn Tháng", months_list)
+        df_year = df_raw if sel_year == "Tất cả" else df_raw[df_raw['NĂM'] == sel_year]
         
-        # Kết quả lọc cuối cùng
+        months = ["Tất cả"] + [f"Tháng {i}" for i in range(1, 13)]
+        sel_month = st.selectbox("📆 Tháng", months)
+        
         if sel_month == "Tất cả":
             df_final = df_year
         else:
-            df_final = df_year[df_year['THÁNG'] == sel_month]
-else:
-    df_final = pd.DataFrame()
+            m_num = int(sel_month.split(" ")[1])
+            df_final = df_year[df_year['THÁNG_SO'] == m_num]
 
-# --- GIAO DIỆN CHÍNH ---
-st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ HỆ THỐNG QUẢN TRỊ LIVE DATA 2026</h1>', unsafe_allow_html=True)
+# --- GIAO DIỆN ---
+st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ QUẢN TRỊ TÀI SẢN CHI TIẾT 2026</h1>', unsafe_allow_html=True)
 
-if not df_final.empty:
-    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔍 Trợ Lý Truy Lục", "🚩 Cảnh Báo"])
+if df_raw is not None and not df_final.empty:
+    t1, t2, t3 = st.tabs(["📊 Thống Kê", "🔍 Tìm Kiếm Chuẩn", "🚩 Cảnh Báo"])
     
-    with tab1:
-        st.write(f"📂 Đang hiển thị: **{sel_month} / {sel_year}**")
+    with t1:
+        st.info(f"📁 Đang xem: {sel_month} / {sel_year} (Tổng {len(df_final)} ca)")
         c1, c2, c3 = st.columns(3)
         c1.metric("Tổng ca hỏng", f"{len(df_final)}")
-        c2.metric("Số thiết bị", f"{df_final['MÃ_MÁY'].nunique()}")
-        counts = df_all['MÃ_MÁY'].value_counts()
-        c3.metric("Máy hỏng nặng (>4 lần)", f"{len(counts[counts >= 4])}")
+        c2.metric("Thiết bị lỗi", f"{df_final['MÃ_MÁY'].nunique()}")
+        c3.metric("Lượt hỏng nặng", f"{len(df_raw['MÃ_MÁY'].value_counts()[df_raw['MÃ_MÁY'].value_counts() >= 4])}")
+        
+        st.plotly_chart(px.bar(df_final['VÙNG'].value_counts().reset_index(), x='count', y='VÙNG', orientation='h', title="Sửa chữa theo khu vực"), use_container_width=True)
 
-        st.divider()
-        cl, cr = st.columns(2)
-        with cl:
-            st.plotly_chart(px.pie(df_final, names='VÙNG_MIỀN', title="Khu vực", hole=0.4), use_container_width=True)
-        with cr:
-            st.plotly_chart(px.bar(df_final['VÙNG_MIỀN'].value_counts().reset_index(), x='count', y='VÙNG_MIỀN', color='VÙNG_MIỀN', title="Số ca theo vùng"), use_container_width=True)
+    with t2:
+        st.subheader("🔍 Tìm kiếm chính xác (Theo Mã hoặc Nội dung)")
+        search_q = st.text_input("Gõ mã máy (VD: 3534) hoặc tên linh kiện:", placeholder="AI sẽ lục trong toàn bộ 3.651 dòng...")
+        
+        if search_q:
+            # Tìm kiếm trên TOÀN BỘ dữ liệu gốc để không bỏ sót lịch sử
+            results = df_raw[
+                df_raw['MÃ_MÁY'].astype(str).str.contains(search_q, case=False, na=False) | 
+                df_raw['LÝ_DO'].astype(str).str.contains(search_q, case=False, na=False)
+            ]
+            st.success(f"Tìm thấy {len(results)} lượt sửa chữa.")
+            st.dataframe(results[['NGAY_FIX', 'MÃ_MÁY', 'LÝ_DO', 'VÙNG']].sort_values('NGAY_FIX', ascending=False), use_container_width=True)
 
-    with tab2:
-        st.subheader("🔍 Tìm kiếm trong 3.651 dòng")
-        q = st.text_input("Nhập mã máy hoặc tên lỗi:")
-        if q:
-            res = df_all[df_all['SEARCH_KEY'].str.contains(q, na=False, case=False)]
-            st.dataframe(res[['NGAY_FIX', 'MÃ_MÁY', 'LÝ_DO', 'VÙNG_MIỀN']].sort_values('NGAY_FIX', ascending=False), use_container_width=True)
-
-    with tab3:
-        st.subheader("🚩 Máy cần thanh lý gấp")
-        bad = df_all.groupby('MÃ_MÁY').size().reset_index(name='Lượt_hỏng')
-        st.table(bad[bad['Lượt_hỏng'] >= 4].sort_values('Lượt_hỏng', ascending=False))
+    with t3:
+        st.subheader("🚩 Danh sách máy hỏng trên 4 lần")
+        bad_list = df_raw['MÃ_MÁY'].value_counts()
+        st.table(bad_list[bad_list >= 4])
 else:
-    st.warning("⚠️ Không tìm thấy dữ liệu. Sếp nhấn 'ÉP CẬP NHẬT' ở Sidebar nhé!")
+    st.warning("⚠️ Đang tải dữ liệu... Sếp hãy đảm bảo link CSV đã được xuất bản đúng cách.")
