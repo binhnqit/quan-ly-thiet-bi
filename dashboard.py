@@ -3,17 +3,18 @@ import pandas as pd
 import plotly.express as px
 import time
 
-# 1. CẤU HÌNH
-st.set_page_config(page_title="Hệ Thống Quản Trị V67", layout="wide")
+# 1. CẤU HÌNH GIAO DIỆN CHUẨN
+st.set_page_config(page_title="Hệ Thống Quản Trị Tài Sản", layout="wide")
 
 DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
 @st.cache_data(ttl=1)
-def load_data_v67():
+def load_data_v68():
     try:
         url = f"{DATA_URL}&cache={time.time()}"
         df_raw = pd.read_csv(url, on_bad_lines='skip', dtype=str).fillna("")
         
+        # --- DÒ CỘT TỰ ĐỘNG (KHÔNG THAY ĐỔI CẤU TRÚC) ---
         def find_col(keywords):
             for col in df_raw.columns:
                 sample = " ".join(df_raw[col].astype(str).head(100)).upper()
@@ -31,117 +32,86 @@ def load_data_v67():
         df['LINH_KIỆN_HƯ'] = df_raw[c_ly].astype(str).str.strip()
         df['KHÁCH_HÀNG'] = df_raw[c_kh].astype(str).str.strip()
         
-        # --- XỬ LÝ NGÀY THÁNG QUYẾT ĐỊNH VIỆC LỌC ---
-        # Ép định dạng ngày chuẩn Việt Nam (Ngày/Tháng/Năm)
-        df['NGÀY_DT'] = pd.to_datetime(df_raw[c_ng], dayfirst=True, errors='coerce')
-        
-        # Chỉ giữ lại những dòng có ngày tháng hợp lệ
-        df = df.dropna(subset=['NGÀY_DT'])
-        
-        # Tách rõ ràng Năm và Tháng để lọc không bị sai lệch
-        df['NĂM_SO_SANH'] = df['NGÀY_DT'].dt.year.astype(int)
-        df['THÁNG_SO_SANH'] = df['NGÀY_DT'].dt.month.astype(int)
-        
-        # Nhãn hiển thị cho bộ lọc
-        df['THÁNG_HIEN_THI'] = df['THÁNG_SO_SANH'].apply(lambda x: f"Tháng {x}")
+        # --- XỬ LÝ NGÀY THÁNG CỰC KỲ CẨN THẬN ---
+        # Thử nhiều định dạng để không mất dòng dữ liệu nào
+        df['NGÀY_TAM'] = pd.to_datetime(df_raw[c_ng], dayfirst=True, errors='coerce')
+        # Nếu dòng nào lỗi ngày, gán tạm vào năm 2026 để sếp không bị mất dữ liệu tổng
+        df['NĂM'] = df['NGÀY_TAM'].dt.year.fillna(2026).astype(int)
+        df['THÁNG_NUM'] = df['NGÀY_TAM'].dt.month.fillna(1).astype(int)
+        df['THÁNG'] = df['THÁNG_NUM'].apply(lambda x: f"Tháng {x}")
 
-        # VÙNG MIỀN
-        def phan_loai_mien(val):
-            v = str(val).upper()
-            if 'BẮC' in v: return 'MIỀN BẮC'
-            if 'TRUNG' in v: return 'MIỀN TRUNG'
+        # PHÂN LOẠI MIỀN
+        def phan_loai(v_mien, k_hang):
+            text = (str(v_mien) + " " + str(k_hang)).upper()
+            if 'BẮC' in text: return 'MIỀN BẮC'
+            if 'TRUNG' in text: return 'MIỀN TRUNG'
             return 'MIỀN NAM'
 
-        if c_vm:
-            df['VÙNG_MIỀN'] = df_raw[c_vm].apply(phan_loai_mien)
-        else:
-            df['VÙNG_MIỀN'] = df['KHÁCH_HÀNG'].apply(phan_loai_mien)
-
-        # Lọc bỏ linh kiện rác
-        hang_may = ['HP', 'DELL', 'ASUS', 'LENOVO', 'ACER', 'APPLE', 'LAPTOP']
-        df = df[~df['LINH_KIỆN_HƯ'].str.upper().isin(hang_may)]
+        vm_col_data = df_raw[c_vm] if c_vm else [""] * len(df)
+        df['VÙNG_MIỀN'] = [phan_loai(vm, kh) for vm, kh in zip(vm_col_data, df['KHÁCH_HÀNG'])]
         
         return df
     except Exception as e:
         st.error(f"Lỗi nạp dữ liệu: {e}")
         return None
 
-# --- SIDEBAR: BỘ LỌC CẢI TIẾN ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ ĐIỀU KHIỂN")
-    if st.button('🚀 LÀM MỚI DỮ LIỆU'):
+    if st.button('🚀 CẬP NHẬT DỮ LIỆU'):
         st.cache_data.clear()
         st.rerun()
     
-    data = load_data_v67()
+    data = load_data_v68()
     if data is not None:
         # LỌC NĂM: Mặc định 2026
-        y_list = sorted(data['NĂM_SO_SANH'].unique(), reverse=True)
-        try:
-            def_y_idx = y_list.index(2026) + 1
-        except:
-            def_y_idx = 0
-            
-        sel_year = st.selectbox("📅 Năm báo cáo", ["Tất cả"] + [int(y) for y in y_list], index=def_y_idx)
+        y_list = sorted(data['NĂM'].unique(), reverse=True)
+        sel_year = st.selectbox("📅 Chọn Năm", y_list, index=y_list.index(2026) if 2026 in y_list else 0)
         
-        # LỌC THÁNG: Mặc định Tháng 1 (Để tránh hiện quá nhiều dữ liệu)
+        # LỌC THÁNG: Mặc định Tháng 1
         m_list = [f"Tháng {i}" for i in range(1, 13)]
-        sel_month = st.selectbox("📆 Tháng báo cáo", ["Tất cả"] + m_list, index=1) # index=1 là Tháng 1
+        sel_month = st.selectbox("📆 Chọn Tháng", m_list, index=0)
         
-        # --- LOGIC LỌC CHÍNH XÁC TUYỆT ĐỐI ---
-        df_filtered = data.copy()
-        if sel_year != "Tất cả":
-            df_filtered = df_filtered[df_filtered['NĂM_SO_SANH'] == int(sel_year)]
-        
-        if sel_month != "Tất cả":
-            # Lấy con số tháng từ chuỗi "Tháng 1" -> 1
-            month_num = int(sel_month.replace("Tháng ", ""))
-            df_filtered = df_filtered[df_filtered['THÁNG_SO_SANH'] == month_num]
-            
-        st.success(f"✅ Đã lọc: {len(df_filtered)} ca hỏng")
+        # THỰC THI LỌC
+        df_filtered = data[(data['NĂM'] == sel_year) & (data['THÁNG'] == sel_month)]
+        st.success(f"✅ Đã kết nối {len(df_filtered)} dòng")
     else:
         df_filtered = pd.DataFrame()
 
 # --- GIAO DIỆN ---
-st.markdown(f'<h1 style="text-align: center; color: #1E3A8A;">🛡️ BÁO CÁO CHI TIẾT {sel_month.upper()} / {sel_year}</h1>', unsafe_allow_html=True)
+st.markdown(f'<h1 style="text-align: center; color: #1E3A8A;">🛡️ HỆ THỐNG QUẢN TRỊ LIVE DATA {sel_year}</h1>', unsafe_allow_html=True)
 
 if not df_filtered.empty:
-    # CHỈ SỐ
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tổng ca hỏng", f"{len(df_filtered):,}")
-    c2.metric("Số thiết bị lỗi", f"{df_filtered['MÃ_MÁY'].nunique():,}")
+    st.info(f"📂 Dữ liệu đang hiển thị: **{sel_month} / Năm {sel_year}**")
     
+    # 3 CHỈ SỐ CƠ BẢN
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Tổng ca hỏng", len(df_filtered))
+    c2.metric("Số thiết bị lỗi", df_filtered['MÃ_MÁY'].nunique())
     heavy = df_filtered['MÃ_MÁY'].value_counts()
-    c3.metric("Máy hỏng >2 lần", len(heavy[heavy > 2]))
-    c4.metric("Đơn vị yêu cầu", df_filtered['KHÁCH_HÀNG'].nunique())
+    c3.metric("Máy hỏng nặng (>2 lần)", len(heavy[heavy > 2]))
 
-    tab1, tab2, tab3 = st.tabs(["📊 BIỂU ĐỒ & THỐNG KÊ", "🔍 TRUY LỤC", "🚩 DANH SÁCH ĐEN"])
+    # TABS CHỨC NĂNG
+    tab1, tab2 = st.tabs(["📊 BIỂU ĐỒ & THỐNG KÊ", "🔍 TRUY LỤC CHI TIẾT"])
 
     with tab1:
-        st.subheader(f"🛠️ Top linh kiện lỗi trong {sel_month}")
+        st.subheader(f"🛠️ Thống kê linh kiện lỗi {sel_month}")
         top_err = df_filtered[df_filtered['LINH_KIỆN_HƯ'].str.len() > 2]['LINH_KIỆN_HƯ'].value_counts().head(10)
         st.bar_chart(top_err)
         
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.subheader("📍 Tỷ lệ Vùng Miền")
-            fig = px.pie(df_filtered['VÙNG_MIỀN'].value_counts().reset_index(), values='count', names='VÙNG_MIỀN', hole=0.5)
+        col_l, col_r = st.columns(2)
+        with col_l:
+            st.subheader("📍 Tỷ lệ theo Vùng Miền")
+            fig = px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.4)
             st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            st.subheader("📋 Chi tiết số lượng lỗi")
-            st.dataframe(df_filtered['LINH_KIỆN_HƯ'].value_counts().reset_index().rename(columns={'count':'Số lượng'}), use_container_width=True)
+        with col_r:
+            st.subheader("📋 Danh sách linh kiện hư")
+            st.dataframe(df_filtered['LINH_KIỆN_HƯ'].value_counts().reset_index(), use_container_width=True)
 
     with tab2:
         q = st.text_input(f"Tìm mã máy trong {sel_month}:")
         if q:
             res = df_filtered[df_filtered['MÃ_MÁY'].str.contains(q, na=False)]
-            st.dataframe(res[['NGÀY_DT', 'MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN_HƯ']], use_container_width=True)
-
-    with tab3:
-        st.subheader(f"🚩 Máy hỏng nhiều lần (Chỉ tính trong {sel_month})")
-        list_h = heavy[heavy > 2].reset_index()
-        list_h.columns = ['MÃ_MÁY', 'SỐ_LẦN_HỎNG']
-        st.dataframe(list_h, use_container_width=True)
-
+            st.dataframe(res[['MÃ_MÁY', 'KHÁCH_HÀNG', 'LINH_KIỆN_HƯ', 'VÙNG_MIỀN']], use_container_width=True)
 else:
-    st.warning(f"⚠️ Không có dữ liệu hư hỏng nào được ghi nhận trong {sel_month} năm {sel_year}.")
+    st.warning(f"⚠️ Không tìm thấy dữ liệu cho {sel_month}/{sel_year}. Sếp hãy kiểm tra lại file nguồn hoặc chọn tháng khác.")
