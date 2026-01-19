@@ -4,34 +4,26 @@ import plotly.express as px
 import time
 
 # 1. CẤU HÌNH GIAO DIỆN
-st.set_page_config(page_title="Quản Trị Tài Sản AI - V40", layout="wide")
+st.set_page_config(page_title="Hệ Thống Quản Trị AI - V41", layout="wide")
 
 # 2. LINK CSV CỦA SẾP
 DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
 @st.cache_data(ttl=5)
-def load_data_v40():
+def load_data_v41():
     try:
-        sync_url = f"{DATA_URL}&cache_buster={time.time()}"
+        sync_url = f"{DATA_URL}&cache={time.time()}"
         df_raw = pd.read_csv(sync_url, on_bad_lines='skip', dtype=str)
-        
         if df_raw.empty: return None
 
-        # Làm sạch tên cột (bỏ khoảng trắng thừa)
-        df_raw.columns = [str(c).strip() for c in df_raw.columns]
-
         df = pd.DataFrame()
-        # Lấy dữ liệu theo vị trí cột để tránh sai tên
+        # Lấy cột 1 (Mã máy), 3 (Lý do), 6 (Ngày sửa)
         df['MÃ_MÁY'] = df_raw.iloc[:, 1].str.split('.').str[0].str.strip()
-        df['LÝ_DO'] = df_raw.iloc[:, 3].fillna("Không xác định")
+        df['LÝ_DO'] = df_raw.iloc[:, 3].fillna("Không rõ")
         
-        # XỬ LÝ NGÀY THÁNG CỰC MẠNH
-        raw_dates = df_raw.iloc[:, 6]
-        df['NGAY_FIX'] = pd.to_datetime(raw_dates, dayfirst=True, errors='coerce')
-        
-        # Tạo cột Năm và xử lý dòng lỗi ngày
+        # Xử lý ngày tháng
+        df['NGAY_FIX'] = pd.to_datetime(df_raw.iloc[:, 6], dayfirst=True, errors='coerce')
         df['NĂM'] = df['NGAY_FIX'].dt.year.fillna(0).astype(int)
-        df['NĂM_STR'] = df['NĂM'].apply(lambda x: str(x) if x != 0 else "Chưa phân loại")
 
         # Nhận diện vùng miền
         def detect_vung(row):
@@ -42,34 +34,26 @@ def load_data_v40():
             return "Văn Phòng"
         
         df['VÙNG_MIỀN'] = df_raw.apply(detect_vung, axis=1)
+        # Tạo cột search tổng hợp để tìm nhanh
+        df['SEARCH_KEY'] = df['MÃ_MÁY'].astype(str) + " " + df['LÝ_DO'].astype(str) + " " + df['VÙNG_MIỀN'].astype(str)
         return df
     except Exception as e:
-        st.error(f"Lỗi hệ thống: {e}")
         return None
 
-df_all = load_data_v40()
+df_all = load_data_v41()
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ QUẢN TRỊ")
-    if st.button('🔄 CẬP NHẬT DỮ LIỆU MỚI'):
+    st.header("⚙️ ĐIỀU KHIỂN")
+    if st.button('🔄 CẬP NHẬT DỮ LIỆU'):
         st.cache_data.clear()
         st.rerun()
     
     if df_all is not None:
         st.success(f"✅ Đã kết nối {len(df_all)} dòng")
-        # Thêm tùy chọn "Tất cả các năm" để luôn hiện dữ liệu
         years = ["Tất cả"] + sorted([str(y) for y in df_all['NĂM'].unique() if y != 0], reverse=True)
-        if "0" in [str(y) for y in df_all['NĂM'].unique()]: years.append("Chưa phân loại")
-        
-        sel_year = st.selectbox("📅 Chọn Năm Báo Cáo", years)
-        
-        if sel_year == "Tất cả":
-            df_filtered = df_all
-        elif sel_year == "Chưa phân loại":
-            df_filtered = df_all[df_all['NĂM'] == 0]
-        else:
-            df_filtered = df_all[df_all['NĂM'] == int(sel_year)]
+        sel_year = st.selectbox("📅 Năm báo cáo", years)
+        df_filtered = df_all if sel_year == "Tất cả" else df_all[df_all['NĂM'] == int(sel_year)]
     else:
         df_filtered = pd.DataFrame()
 
@@ -77,7 +61,7 @@ with st.sidebar:
 st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ HỆ THỐNG QUẢN TRỊ LIVE DATA 2026</h1>', unsafe_allow_html=True)
 
 if not df_filtered.empty:
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "💬 Trợ Lý AI", "🚩 Cảnh Báo", "📖 Hướng Dẫn"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🔍 Trợ Lý Truy Lục", "🚩 Cảnh Báo", "📖 Hướng Dẫn"])
     
     with tab1:
         c1, c2, c3 = st.columns(3)
@@ -89,46 +73,56 @@ if not df_filtered.empty:
         st.divider()
         cl, cr = st.columns(2)
         with cl:
-            st.subheader("📍 Tỷ lệ theo Khu vực")
-            st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.4), use_container_width=True)
+            st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', title="Phân bổ Khu vực", hole=0.4), use_container_width=True)
         with cr:
-            st.subheader("🛠️ Thống kê Linh kiện")
-            def classify(x):
+            def get_lk(x):
                 x = str(x).lower()
                 if 'pin' in x: return 'Pin'
                 if 'màn' in x: return 'Màn hình'
                 if 'phím' in x: return 'Bàn phím'
-                if 'sạc' in x: return 'Sạc/Adapter'
-                return 'Linh kiện khác'
-            df_filtered['LINH_KIEN'] = df_filtered['LÝ_DO'].apply(classify)
-            st.plotly_chart(px.bar(df_filtered['LINH_KIEN'].value_counts().reset_index(), x='count', y='LINH_KIEN', orientation='h', color='LINH_KIEN'), use_container_width=True)
+                if 'sạc' in x: return 'Sạc'
+                return 'Khác'
+            df_filtered['LK'] = df_filtered['LÝ_DO'].apply(get_lk)
+            st.plotly_chart(px.bar(df_filtered['LK'].value_counts().reset_index(), x='count', y='LK', orientation='h', title="Linh kiện hỏng nhiều"), use_container_width=True)
 
     with tab2:
-        st.subheader("💬 Trợ lý AI Tra cứu Lịch sử")
-        q = st.text_input("Gõ mã máy (VD: 3534) hoặc lỗi để AI tìm kiếm trong 3.651 dòng:")
+        st.subheader("💬 Trợ Lý Truy Lục Lịch Sử AI")
+        # PHẦN TÌM KIẾM CẢI TIẾN CỦA SẾP ĐÂY
+        q = st.text_input("Nhập bất cứ thứ gì (Mã máy, Lỗi, hoặc Khu vực):", placeholder="Ví dụ: 3534 hoặc Màn hình hoặc Miền Nam...")
+        
         if q:
-            res = df_all[df_all['MÃ_MÁY'].str.contains(q, na=False, case=False) | 
-                         df_all['LÝ_DO'].str.contains(q, na=False, case=False)]
-            st.success(f"Tìm thấy {len(res)} kết quả.")
-            st.dataframe(res[['NGAY_FIX', 'MÃ_MÁY', 'LÝ_DO', 'VÙNG_MIỀN']].sort_values('NGAY_FIX', ascending=False), use_container_width=True)
+            # Tìm kiếm không phân biệt hoa thường trong cột search tổng hợp
+            res = df_all[df_all['SEARCH_KEY'].str.contains(q, na=False, case=False)]
+            
+            if not res.empty:
+                st.info(f"🔍 Tìm thấy {len(res)} lịch sử sửa chữa phù hợp với từ khóa '{q}'")
+                # Hiển thị bảng kết quả đẹp hơn
+                st.dataframe(
+                    res[['NGAY_FIX', 'MÃ_MÁY', 'LÝ_DO', 'VÙNG_MIỀN']].sort_values('NGAY_FIX', ascending=False),
+                    use_container_width=True,
+                    column_config={
+                        "NGAY_FIX": "Ngày sửa",
+                        "MÃ_MÁY": "Mã thiết bị",
+                        "LÝ_DO": "Chi tiết lỗi",
+                        "VÙNG_MIỀN": "Khu vực"
+                    }
+                )
+            else:
+                st.error(f"❌ Không tìm thấy dữ liệu nào cho từ khóa '{q}'. Sếp thử kiểm tra lại mã máy xem sao nhé!")
+        else:
+            st.write("💡 *Mẹo: Sếp có thể gõ mã máy để xem máy đó đã từng hỏng những gì trong quá khứ.*")
 
     with tab3:
-        st.subheader("🚩 Danh sách máy hỏng nhiều (Cần thanh lý)")
-        bad_machines = df_all.groupby('MÃ_MÁY').agg(Số_lần_hỏng=('LÝ_DO', 'count'), Khu_vực=('VÙNG_MIỀN', 'first')).reset_index()
-        st.table(bad_machines[bad_machines['Số_lần_hỏng'] >= 4].sort_values('Số_lần_hỏng', ascending=False))
+        st.subheader("🚩 Danh sách máy 'Ngốn' tiền nhất (>= 4 lần)")
+        report = df_all.groupby('MÃ_MÁY').agg(Lượt_hỏng=('LÝ_DO', 'count'), Vùng=('VÙNG_MIỀN', 'first')).reset_index()
+        st.table(report[report['Lượt_hỏng'] >= 4].sort_values('Lượt_hỏng', ascending=False))
 
     with tab4:
-        st.info("📖 HƯỚNG DẪN VẬN HÀNH")
+        st.info("📖 HƯỚNG DẪN SỬ DỤNG")
         st.markdown("""
-        ### 1. Xem dữ liệu nhanh
-        - Mặc định hệ thống hiện **Tất cả** dữ liệu. Sếp có thể dùng bộ lọc bên trái để xem riêng từng năm.
-        - Nếu sếp thấy mục **'Chưa phân loại'**, nghĩa là những dòng đó trong Sheets đang bị sai định dạng ngày tháng.
-        
-        ### 2. Cách dùng Trợ lý AI
-        - Sang Tab **'Trợ Lý AI'**, chỉ cần gõ mã máy. Hệ thống sẽ lục lại toàn bộ lịch sử từ trước đến nay của máy đó.
-        
-        ### 3. Lưu ý về Google Sheets
-        - Sếp nên để cột **Ngày sửa** đồng nhất dạng: `Ngày/Tháng/Năm` (VD: 20/01/2026).
+        1. **Tra cứu nhanh:** Tại Tab 'Trợ lý Truy Lục', sếp chỉ cần gõ mã máy. AI sẽ hiện ra toàn bộ 'tiền sử bệnh án' của máy đó.
+        2. **Lọc dữ liệu:** Nếu muốn xem báo cáo riêng lẻ từng năm, sếp dùng menu bên trái. Nếu muốn xem toàn bộ 3.651 dòng, chọn **'Tất cả'**.
+        3. **Lưu ý:** Nếu sếp thấy ngày tháng hiện 'NaT', hãy kiểm tra lại định dạng ngày trong file Sheets (nên để Ngày/Tháng/Năm).
         """)
 else:
-    st.warning("⚠️ Không có dữ liệu để hiển thị. Sếp vui lòng nhấn 'Cập nhật dữ liệu mới' ở Sidebar.")
+    st.warning("⚠️ Đang chờ dữ liệu hoặc không có dữ liệu cho mục đã chọn. Sếp nhấn 'Cập nhật' ở Sidebar nhé!")
