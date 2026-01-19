@@ -26,20 +26,16 @@ def load_data():
     try:
         df = pd.read_csv(PUBLISHED_URL)
         df.columns = [f"COL_{i}" for i in range(len(df.columns))]
-        
         def clean_code(val):
             if pd.isna(val): return ""
             return str(val).split('.')[0].strip()
-
         df['MÃ_MÁY'] = df['COL_1'].apply(clean_code)
-        
         def detect_region(row):
             text = " ".join(row.astype(str)).upper()
             if any(x in text for x in ["NAM", "MN"]): return "Miền Nam"
             if any(x in text for x in ["BẮC", "MB"]): return "Miền Bắc"
             if any(x in text for x in ["TRUNG", "ĐN", "DN"]): return "Miền Trung"
             return "Khác"
-        
         df['VÙNG_MIỀN'] = df.apply(detect_region, axis=1)
         df['LÝ_DO_HỎNG'] = df['COL_3'].fillna("Chưa rõ").astype(str).str.strip()
         df['NGAY_FIX'] = pd.to_datetime(df['COL_6'], errors='coerce', dayfirst=True)
@@ -60,28 +56,31 @@ with st.sidebar:
     sel_vung = st.multiselect("📍 Chọn Miền", list_vung, default=list_vung)
     df_filtered = df_global[(df_global['NĂM'] == sel_year) & (df_global['VÙNG_MIỀN'].isin(sel_vung))]
 
-# 3. XỬ LÝ DỮ LIỆU MÁY HỎNG NHIỀU (Dùng cho Tab 4 và KPI)
-machine_stats = df_global['MÃ_MÁY'].value_counts().reset_index()
-machine_stats.columns = ['Mã Máy', 'Số Lần Hỏng']
-# Lọc những máy hỏng >= 4 lần
-critical_list = machine_stats[machine_stats['Số Lần Hỏng'] >= 4]
+# 3. XỬ LÝ DỮ LIỆU MÁY NGUY KỊCH & BỆNH LÝ
+# Tính số lần hỏng và tìm lỗi phổ biến nhất cho mỗi máy
+agg_func = {
+    'LÝ_DO_HỎNG': [('Số Lần Hỏng', 'count'), ('Lỗi Hay Gặp Nhất', lambda x: x.mode().iloc[0] if not x.mode().empty else "Nhiều lỗi")],
+    'VÙNG_MIỀN': [('Vị Trí', 'first')]
+}
+machine_report = df_global.groupby('MÃ_MÁY').agg(agg_func)
+machine_report.columns = machine_report.columns.get_level_values(1)
+machine_report = machine_report.reset_index()
+
+# Lọc máy hỏng >= 4 lần
+critical_data = machine_report[machine_report['Số Lần Hỏng'] >= 4].sort_values(by='Số Lần Hỏng', ascending=False)
 
 # --- GIAO DIỆN CHÍNH ---
 st.markdown('<p class="main-title">🛡️ HỆ THỐNG QUẢN TRỊ TÀI SẢN CHIẾN LƯỢC AI</p>', unsafe_allow_html=True)
 
-tab1, tab2, tab4, tab3 = st.tabs(["📊 Dashboard & AI Chat", "⚡ Ưu Tiên Mua Sắm", "🚩 Danh Sách Nguy Kịch", "📖 Hướng Dẫn"])
+tab1, tab2, tab4, tab3 = st.tabs(["📊 Dashboard & AI Chat", "⚡ Ưu Tiên Mua Sắm", "🚩 Phân Tích Bệnh Lý", "📖 Hướng Dẫn"])
 
 with tab1:
-    # 3 THẺ KPI GỐC
     c1, c2, c3 = st.columns(3)
     c1.metric("Tổng lượt hỏng", f"{len(df_filtered)} ca")
-    
     forecast_counts = df_filtered['LÝ_DO_HỎNG'].value_counts().head(5)
     est_budget = sum([math.ceil((v/1)*1.2)*500000 for v in forecast_counts.values])
     c2.metric("Ngân sách dự phòng", f"{est_budget:,.0f}đ")
-    
-    # Chỉ tính máy nguy kịch xuất hiện trong dữ liệu đang lọc
-    curr_crit = df_filtered[df_filtered['MÃ_MÁY'].isin(critical_list['Mã Máy'])]['MÃ_MÁY'].nunique()
+    curr_crit = df_filtered[df_filtered['MÃ_MÁY'].isin(critical_data['MÃ_MÁY'])]['MÃ_MÁY'].nunique()
     c3.metric("Máy Nguy kịch (Đỏ)", f"{curr_crit}")
 
     st.divider()
@@ -91,18 +90,12 @@ with tab1:
         st.plotly_chart(px.pie(df_filtered, names='VÙNG_MIỀN', hole=0.5), use_container_width=True)
     with col_r:
         st.subheader("🛠️ Thống kê linh kiện")
-        def classify(r):
-            r = r.lower()
-            if 'pin' in r: return 'Pin'; 
-            if 'màn' in r: return 'Màn hình'
-            return 'Khác'
-        df_filtered['LK'] = df_filtered['LÝ_DO_HỎNG'].apply(classify)
+        df_filtered['LK'] = df_filtered['LÝ_DO_HỎNG'].apply(lambda r: 'Pin' if 'pin' in r.lower() else ('Màn hình' if 'màn' in r.lower() else 'Khác'))
         st.plotly_chart(px.bar(df_filtered['LK'].value_counts().reset_index(), x='count', y='LK', orientation='h'), use_container_width=True)
 
-    # CHATBOT AI (V14)
     st.divider()
     st.subheader("💬 Trợ lý AI (Tra cứu bệnh án)")
-    q = st.text_input("Gõ mã máy (VD: 3534):", key="chatbot_input")
+    q = st.text_input("Gõ mã máy (VD: 3534):")
     if q:
         import re
         m = re.search(r'\d+', q)
@@ -110,35 +103,26 @@ with tab1:
             code = m.group()
             res = df_global[df_global['MÃ_MÁY'] == code].sort_values('NGAY_FIX', ascending=False)
             if not res.empty:
-                st.info(f"AI: Máy {code} hỏng {len(res)} lần. " + ("**ĐỀ XUẤT THANH LÝ!**" if len(res)>=4 else "**SỬA TIẾP**"))
+                st.info(f"AI: Máy {code} hỏng {len(res)} lần. " + ("**DỪNG SỬA - THANH LÝ!**" if len(res)>=4 else "**CÒN DÙNG TỐT**"))
                 st.dataframe(res[['NGAY_FIX', 'LÝ_DO_HỎNG', 'VÙNG_MIỀN']], use_container_width=True)
 
-with tab2:
-    st.header("📋 Ưu Tiên Mua Sắm")
-    df_p = df_filtered.copy()
-    df_p['ƯU TIÊN'] = df_p.apply(lambda r: "🔴 KHẨN CẤP" if any(x in str(r['LÝ_DO_HỎNG']) for x in ['Màn', 'Main']) else "🟢 BÌNH THƯỜNG", axis=1)
-    st.dataframe(df_p[['ƯU TIÊN', 'MÃ_MÁY', 'LÝ_DO_HỎNG', 'NGAY_FIX', 'VÙNG_MIỀN']], use_container_width=True)
-
 with tab4:
-    st.header("🚩 Phân Tích Thiết Bị Hỏng Nhiều Lần")
-    st.write("Dưới đây là danh sách các máy hỏng từ **4 lần trở lên** (Toàn thời gian). Sếp có thể nhấn vào tiêu đề cột để sắp xếp.")
+    st.header("🚩 Danh Sách Thiết Bị "Bệnh Nền" Nặng")
+    st.write("Bảng thống kê máy hỏng nhiều lần kèm theo chẩn đoán lỗi đặc trưng nhất của từng máy.")
     
-    # Bổ sung thông tin Vùng miền cho danh sách nguy kịch để sếp dễ xử lý
-    last_known_region = df_global.drop_duplicates('MÃ_MÁY', keep='first')[['MÃ_MÁY', 'VÙNG_MIỀN']]
-    critical_data = critical_list.merge(last_known_region, left_on='Mã Máy', right_on='MÃ_MÁY').drop(columns=['MÃ_MÁY'])
-    
-    # Hiển thị bảng với chức năng SORT mặc định của Streamlit
     st.dataframe(
-        critical_data.sort_values(by='Số Lần Hỏng', ascending=False),
+        critical_data,
         use_container_width=True,
         column_config={
-            "Số Lần Hỏng": st.column_config.NumberColumn(format="%d 🔥"),
-            "Mã Máy": st.column_config.TextColumn("Mã Máy Thiết Bị"),
-            "VÙNG_MIỀN": "Vị Trí Gần Nhất"
-        }
+            "MÃ_MÁY": "Mã Thiết Bị",
+            "Số Lần Hỏng": st.column_config.NumberColumn("Tổng số lần hỏng", format="%d ⚠️"),
+            "Lỗi Hay Gặp Nhất": "Chẩn đoán bệnh chính",
+            "Vị Trí": "Khu vực vận hành"
+        },
+        hide_index=True
     )
     
-    st.warning("💡 **Hướng xử lý:** Các máy có biểu tượng 🔥 nhiều nên được đưa vào diện thanh lý trong quý này.")
+    st.info("💡 **Gợi ý từ AI:** Nếu một máy có 'Số lần hỏng' cao và 'Lỗi hay gặp nhất' luôn trùng nhau, sếp nên thay thế linh kiện loại khác hoặc kiểm tra lại nguồn điện tại 'Vị trí' đó.")
 
 with tab3:
-    st.info("### 📖 Hướng Dẫn Vận Hành\n1. Tab 1: Xem tổng quan và Chat với AI.\n2. Tab 2: Xem linh kiện cần mua gấp.\n3. Tab 4: Lọc máy nát để lập danh sách thanh lý.")
+    st.markdown("### 📖 Hướng Dẫn Vận Hành\n1. **Tab 1:** Quản lý tổng quát và Chatbot.\n2. **Tab 2:** Mua sắm linh kiện khẩn cấp.\n3. **Tab 4:** Phân tích bệnh lý để quyết định thanh lý hoặc sửa chữa chuyên sâu.")
