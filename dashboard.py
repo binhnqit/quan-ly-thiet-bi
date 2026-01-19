@@ -6,7 +6,7 @@ import plotly.express as px
 st.set_page_config(page_title="Hệ Thống Quản Trị AI - V31", layout="wide")
 
 # 2. LINK CSV CHUẨN SẾP VỪA GỬI (Đã kiểm tra hoạt động 100%)
-DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
+DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?gid=675485241&single=true&output=csv"
 
 @st.cache_data(ttl=5)
 def load_data_v31():
