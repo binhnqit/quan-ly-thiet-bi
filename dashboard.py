@@ -2,99 +2,101 @@ import streamlit as st
 import pandas as pd
 import time
 
-# 1. CẤU HÌNH GIAO DIỆN
-st.set_page_config(page_title="Hệ Thống Quản Trị AI - V47", layout="wide")
+# 1. CẤU HÌNH
+st.set_page_config(page_title="Hệ Thống AI 3651 - V48", layout="wide")
 
-# 2. LINK CSV CHUẨN SẾP VỪA GỬI
+# LINK CSV CHUẨN CỦA SẾP
 DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
 
-@st.cache_data(ttl=5)
-def load_data_v47():
+@st.cache_data(ttl=1)
+def load_data_v48():
     try:
-        # Phá cache để đảm bảo lấy đủ 3.651 dòng
-        final_url = f"{DATA_URL}&cache_buster={time.time()}"
-        df = pd.read_csv(final_url, on_bad_lines='skip', dtype=str)
+        # Ép tải mới
+        url = f"{DATA_URL}&cache={time.time()}"
+        df = pd.read_csv(url, on_bad_lines='skip', dtype=str)
         
-        # Làm sạch tên cột (Viết hoa, bỏ khoảng trắng)
-        df.columns = [str(c).strip().upper() for c in df.columns]
-        
-        # --- CHIẾN THUẬT TÌM CỘT THÔNG MINH ---
-        # AI tự dò cột dù sếp có chèn thêm hay đổi vị trí cột
-        col_ma = [c for c in df.columns if 'MÃ' in c or 'ID' in c][0]
-        col_lydo = [c for c in df.columns if 'LÝ DO' in c or 'NỘI DUNG' in c or 'HƯ HỎNG' in c][0]
-        col_ngay = [c for c in df.columns if 'NGÀY' in c][0]
-        
-        # Tạo bảng dữ liệu chuẩn để xử lý
+        # Nếu dòng 1 bị trống, tự động lấy dòng tiếp theo làm tiêu đề
+        if df.columns[0].startswith('Unnamed'):
+            df.columns = df.iloc[0]
+            df = df[1:]
+
+        # Làm sạch tên cột để đối chiếu
+        cols = [str(c).strip().upper() for c in df.columns]
+        df.columns = cols
+
+        # TÌM CỘT THÔNG MINH (Dò theo từ khóa)
+        def find_col(keywords):
+            for k in keywords:
+                for c in df.columns:
+                    if k in c: return c
+            return None
+
+        c_ma = find_col(['MÃ', 'MA', 'ID', 'DEVICE'])
+        c_ly = find_col(['LÝ DO', 'LY DO', 'NỘI DUNG', 'NOI DUNG', 'CHI TIẾT', 'LOI'])
+        c_ng = find_col(['NGÀY', 'NGAY', 'DATE', 'TIME'])
+
+        if not c_ma or not c_ng:
+            st.error(f"❌ AI tìm thấy các cột: {list(df.columns)}. Nhưng không thấy cột nào tên là 'MÃ' hoặc 'NGÀY'. Sếp sửa lại tiêu đề dòng 1 nhé!")
+            return None
+
+        # Chuyển đổi dữ liệu
         new_df = pd.DataFrame()
-        new_df['MÃ_MÁY'] = df[col_ma].str.split('.').str[0].str.strip()
-        new_df['NỘI_DUNG'] = df[col_lydo].fillna("Trống")
-        new_df['NGÀY_FIX'] = pd.to_datetime(df[col_ngay], dayfirst=True, errors='coerce')
+        new_df['MÃ_MÁY'] = df[c_ma].str.split('.').str[0].str.strip()
+        new_df['LÝ_DO'] = df[c_ly].fillna("Trống")
+        new_df['NGÀY_GỐC'] = pd.to_datetime(df[c_ng], dayfirst=True, errors='coerce')
         
-        # Tách Năm và Tháng để làm bộ lọc
-        new_df['NĂM'] = new_df['NGÀY_FIX'].dt.year.fillna(0).astype(int)
-        new_df['THÁNG_SO'] = new_df['NGAY_FIX'].dt.month.fillna(0).astype(int)
-        
-        # Cột tìm kiếm tổng hợp (Gộp Mã máy và Nội dung để tìm kiếm chuẩn 100%)
-        new_df['SEARCH_ALL'] = new_df['MÃ_MÁY'].astype(str) + " " + new_df['NỘI_DUNG'].astype(str)
+        # Xử lý Năm/Tháng
+        new_df['NĂM'] = new_df['NGÀY_GỐC'].dt.year.fillna(2026).astype(int)
+        new_df['THÁNG'] = new_df['NGÀY_GỐC'].dt.month.fillna(1).astype(int)
         
         return new_df
     except Exception as e:
-        st.error(f"⚠️ Lỗi cấu trúc Sheets: AI không tìm thấy cột 'Mã' hoặc 'Ngày'. Sếp hãy kiểm tra tiêu đề dòng 1 nhé!")
+        st.error(f"Lỗi đọc file: {e}")
         return None
 
-# --- SIDEBAR: BỘ LỌC THỜI GIAN ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ QUẢN TRỊ DỮ LIỆU")
-    if st.button('🔄 CẬP NHẬT 3.651 DÒNG'):
+    st.header("⚙️ ĐIỀU KHIỂN")
+    if st.button('🚀 KẾT NỐI 3.651 DÒNG'):
         st.cache_data.clear()
         st.rerun()
-
-    df_all = load_data_v47()
     
-    if df_all is not None:
-        st.success(f"✅ Đã nhận {len(df_all)} dòng") # Phải hiện 3651 ở đây mới đúng
+    data = load_data_v48()
+    if data is not None:
+        st.success(f"✅ Đã nhận {len(data)} dòng")
         
-        # Lọc Năm
-        years = ["Tất cả"] + sorted([int(y) for y in df_all['NĂM'].unique() if y != 0], reverse=True)
-        sel_year = st.selectbox("📅 Chọn Năm", years)
+        # Lọc Năm và Tháng
+        list_năm = ["Tất cả"] + sorted(data['NĂM'].unique().tolist(), reverse=True)
+        sel_year = st.selectbox("📅 Chọn Năm", list_năm)
         
-        # Lọc Tháng
-        months = ["Tất cả"] + [f"Tháng {i}" for i in range(1, 13)]
-        sel_month = st.selectbox("📆 Chọn Tháng", months)
+        list_thang = ["Tất cả"] + [f"Tháng {i}" for i in range(1, 13)]
+        sel_month = st.selectbox("📆 Chọn Tháng", list_thang)
         
-        # Áp dụng lọc cho Dashboard
-        df_view = df_all.copy()
-        if sel_year != "Tally":
-            df_view = df_view[df_view['NĂM'] == sel_year]
+        # Áp dụng lọc
+        df_final = data.copy()
+        if sel_year != "Tất cả":
+            df_final = df_final[df_final['NĂM'] == sel_year]
         if sel_month != "Tất cả":
             m_num = int(sel_month.split(" ")[1])
-            df_view = df_view[df_view['THÁNG_SO'] == m_num]
+            df_final = df_final[df_final['THÁNG'] == m_num]
     else:
-        df_view = pd.DataFrame()
+        df_final = pd.DataFrame()
 
-# --- GIAO DIỆN CHÍNH ---
-st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ AI TRUY LỤC TÀI SẢN 2026</h1>', unsafe_allow_html=True)
+# --- GIAO DIỆN ---
+st.markdown('<h1 style="text-align: center; color: #1E3A8A;">🛡️ HỆ THỐNG TRUY LỤC TÀI SẢN 2026</h1>', unsafe_allow_html=True)
 
-if not df_view.empty:
-    tab1, tab2 = st.tabs(["🔍 TÌM KIẾM CHÍNH XÁC", "📊 BÁO CÁO THÁNG"])
+if not df_final.empty:
+    t1, t2 = st.tabs(["🔍 TÌM KIẾM CHUẨN", "📊 THỐNG KÊ"])
     
-    with tab1:
-        st.subheader("🔎 Nhập Mã máy hoặc Tên linh kiện")
-        keyword = st.text_input("Ví dụ: '3534' hoặc 'Màn hình'", placeholder="AI sẽ lục lại toàn bộ lịch sử 3.651 dòng...")
-        
-        if keyword:
-            # TÌM KIẾM TOÀN CỤC: Lục trong df_all (toàn bộ data) chứ không chỉ trong tháng đang lọc
-            results = df_all[df_all['SEARCH_ALL'].str.contains(keyword, case=False, na=False)]
-            st.info(f"Tìm thấy {len(results)} kết quả trong toàn bộ lịch sử.")
-            st.dataframe(results[['NGÀY_FIX', 'MÃ_MÁY', 'NỘI_DUNG']].sort_values('NGÀY_FIX', ascending=False), use_container_width=True)
-
-    with tab2:
-        st.write(f"📂 Thống kê cho: **{sel_month} / {sel_year}**")
-        col1, col2 = st.columns(2)
-        col1.metric("Tổng lượt sửa", len(df_view))
-        col2.metric("Số máy hư hỏng", df_view['MÃ_MÁY'].nunique())
-        
-        # Biểu đồ linh kiện hỏng nhiều nhất tháng
-        st.bar_chart(df_view['NỘI_DUNG'].value_counts().head(10))
-else:
-    st.warning("⚠️ Không có dữ liệu hoặc đang tải. Sếp nhấn 'CẬP NHẬT' nhé!")
+    with t1:
+        search = st.text_input("Gõ mã máy hoặc lỗi để truy lục lịch sử:")
+        if search:
+            # Tìm trong toàn bộ dữ liệu (data) thay vì df_final (dữ liệu đã lọc)
+            res = data[data['MÃ_MÁY'].str.contains(search, na=False, case=False) | 
+                       data['LÝ_DO'].str.contains(search, na=False, case=False)]
+            st.dataframe(res[['NGÀY_GỐC', 'MÃ_MÁY', 'LÝ_DO']].sort_values('NGAY_GỐC', ascending=False), use_container_width=True)
+    
+    with t2:
+        st.write(f"📂 Đang xem: {sel_month} / {sel_year}")
+        st.metric("Tổng số ca", len(df_final))
+        st.bar_chart(df_final['LÝ_DO'].value_counts().head(10))
