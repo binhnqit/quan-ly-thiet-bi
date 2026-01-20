@@ -5,8 +5,8 @@ import plotly.express as px
 # --- 1. CONFIG ---
 st.set_page_config(page_title="LAPTOP MÁY PHA MÀU 4ORANGES", layout="wide", page_icon="🎨")
 
-# Link logo sếp cung cấp (Thay bằng đường dẫn file thực tế nếu sếp để cùng thư mục code)
-LOGO_URL = "https://raw.githubusercontent.com/your-repo/path-to-logo/logo@3x.png" # Sếp có thể thay bằng link ảnh hoặc path nội bộ
+# Link Logo dự phòng (Sếp có thể thay link này bằng link ảnh chính thức của công ty)
+LOGO_URL = "https://www.4oranges.com/vnt_upload/weblink/Logo_4_Oranges.png"
 
 URL_LAPTOP_LOI = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?gid=675485241&single=true&output=csv"
 URL_MIEN_BAC = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?gid=602348620&single=true&output=csv"
@@ -38,12 +38,14 @@ def process_finance_data(df_loi_raw):
     return pd.DataFrame(f_list)
 
 def main():
-    # --- SIDEBAR CẬP NHẬT LOGO & TÊN MỚI ---
+    # --- SIDEBAR ---
     with st.sidebar:
-        # Chèn Logo 4Oranges vào Sidebar
-        st.image("logo@3x.png", use_container_width=True) # Sử dụng file sếp đã upload
-        st.title("LAPTOP MÁY PHA MÀU")
+        try:
+            st.image(LOGO_URL, use_container_width=True)
+        except:
+            st.title("🎨 4ORANGES")
         
+        st.subheader("LAPTOP MÁY PHA MÀU")
         if st.button('🔄 LÀM MỚI DỮ LIỆU', type="primary", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
@@ -56,7 +58,7 @@ def main():
             status.update(label="✅ Hệ thống sẵn sàng!", state="complete")
 
         if df_f.empty:
-            st.warning("⚠️ Đang chờ dữ liệu từ máy chủ...")
+            st.warning("⚠️ Đang chờ dữ liệu...")
             return
 
         years = sorted(df_f['NĂM'].unique(), reverse=True)
@@ -64,37 +66,30 @@ def main():
         months = ["Tất cả"] + sorted(df_f[df_f['NĂM'] == sel_year]['THÁNG'].unique().tolist())
         sel_month = st.selectbox("Chọn Tháng", months)
 
-    # Lọc dữ liệu hiển thị
+    # --- TIÊU ĐỀ CHÍNH ---
+    st.title("HỆ THỐNG QUẢN LÝ LAPTOP MÁY PHA MÀU 4ORANGES")
+    st.divider()
+
+    # FILTER DATA
     df_display = df_f[df_f['NĂM'] == sel_year]
     if sel_month != "Tất cả":
         df_display = df_display[df_display['THÁNG'] == sel_month]
 
-    # --- TIÊU ĐỀ CHÍNH MỚI ---
-    col_header, col_logo = st.columns([4, 1])
-    with col_header:
-        st.title("HỆ THỐNG QUẢN LÝ LAPTOP MÁY PHA MÀU 4ORANGES")
-    with col_logo:
-        st.image("logo@3x.png", width=150)
-
-    # --- GIỮ NGUYÊN CÁC CHỨC NĂNG TABS V21.6 ---
+    # KPIs
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("TỔNG CHI PHÍ", f"{df_display['CP'].sum():,.0f} đ")
     m2.metric("SỐ CA XỬ LÝ", f"{len(df_display)} ca")
     m3.metric("TB/CA", f"{(df_display['CP'].mean() if len(df_display)>0 else 0):,.0f} đ")
     m4.metric("LỖI PHỔ BIẾN", df_display['LINH_KIỆN'].value_counts().idxmax() if not df_display.empty else "N/A")
 
-    st.divider()
-
     tabs = st.tabs(["📊 XU HƯỚNG", "💰 TÀI CHÍNH", "🩺 SỨC KHỎE MÁY", "📦 KHO LOGISTICS", "🧠 AI ĐỀ XUẤT"])
 
-    # (Nội dung các Tab giữ nguyên như bản V21.6 sếp đã duyệt)
     with tabs[0]: # XU HƯỚNG
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(px.pie(df_display, names='VÙNG', title="PHÂN BỔ THEO MIỀN", hole=0.4), use_container_width=True)
-        with col2:
-            df_ca_thang = df_display.groupby('THÁNG').size().reset_index(name='Số ca')
-            st.plotly_chart(px.line(df_ca_thang, x='THÁNG', y='Số ca', title="TỔNG CA HƯ THEO THÁNG", markers=True), use_container_width=True)
+        c1, c2 = st.columns(2)
+        with c1: st.plotly_chart(px.pie(df_display, names='VÙNG', title="PHÂN BỔ THEO MIỀN", hole=0.4), use_container_width=True)
+        with c2: 
+            df_t = df_display.groupby('THÁNG').size().reset_index(name='Số ca')
+            st.plotly_chart(px.line(df_t, x='THÁNG', y='Số ca', title="TỔNG CA HƯ THEO THÁNG", markers=True), use_container_width=True)
 
     with tabs[1]: # TÀI CHÍNH
         st.plotly_chart(px.treemap(df_display, path=['VÙNG', 'LINH_KIỆN'], values='CP', title="CƠ CẤU CHI PHÍ"), use_container_width=True)
