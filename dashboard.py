@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# --- 1. CONFIG ---
+# --- 1. CONFIG (NIÊM PHONG) ---
 st.set_page_config(page_title="LAPTOP MÁY PHA MÀU 4ORANGES", layout="wide", page_icon="🎨")
 ORANGE_COLORS = ["#FF8C00", "#FFA500", "#FF4500", "#E67E22", "#D35400"]
 
@@ -19,7 +19,6 @@ def get_raw_data(url):
 def process_finance_data(df_loi_raw):
     f_list = []
     if not df_loi_raw.empty:
-        # Giữ nguyên logic iloc[1:] và các cột 1, 3, 5, 6, 8
         for _, row in df_loi_raw.iloc[1:].iterrows():
             try:
                 ma = str(row.iloc[1]).strip()
@@ -64,7 +63,6 @@ def main():
     st.title("HỆ THỐNG QUẢN LÝ LAPTOP MÁY PHA MÀU 4ORANGES")
     st.divider()
 
-    # KPI CARDS
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("TỔNG CHI PHÍ", f"{df_display['CP'].sum():,.0f} đ")
     m2.metric("SỐ CA XỬ LÝ", f"{len(df_display)} ca")
@@ -78,14 +76,34 @@ def main():
         with c1: st.plotly_chart(px.pie(df_display, names='VÙNG', hole=0.4, color_discrete_sequence=ORANGE_COLORS), use_container_width=True)
         with c2: st.plotly_chart(px.line(df_display.groupby('THÁNG').size().reset_index(name='Số ca'), x='THÁNG', y='Số ca', markers=True, color_discrete_sequence=["#FF8C00"]), use_container_width=True)
 
-    with tabs[3]: # KHO LOGISTICS - BẢO TOÀN TUYỆT ĐỐI LOGIC R/OK
+    with tabs[1]: # TÀI CHÍNH - FIX ERROR TẠI ĐÂY
+        st.subheader("🔍 PHÂN TÍCH SÂU CHI PHÍ & TẦN SUẤT")
+        deep_df = df_display.groupby('LINH_KIỆN').agg({'CP': ['sum', 'count', 'mean']}).reset_index()
+        deep_df.columns = ['LINH_KIỆN', 'Tổng_CP', 'Số_lần_hỏng', 'Trung_bình_CP']
+        # Đảm bảo size không bị <= 0 để tránh crash
+        deep_df['Size_Plot'] = deep_df['Trung_bình_CP'].apply(lambda x: max(x, 1))
+
+        try:
+            st.plotly_chart(px.scatter(deep_df, x="Số_lần_hỏng", y="Tổng_CP", size="Size_Plot", color="LINH_KIỆN",
+                                     title="MỐI TƯƠNG QUAN TẦN SUẤT VÀ TỔNG CHI PHÍ", color_discrete_sequence=px.colors.sequential.Oranges_r), use_container_width=True)
+        except:
+            st.error("⚠️ Không thể hiển thị biểu đồ phân tán do dữ liệu không đủ hoặc có giá trị rác.")
+        
+        st.plotly_chart(px.treemap(df_display, path=['VÙNG', 'LINH_KIỆN'], values='CP', title="CƠ CẤU CHI PHÍ CHI TIẾT", color_discrete_sequence=ORANGE_COLORS), use_container_width=True)
+
+    with tabs[2]: # SỨC KHỎE MÁY
+        health = df_f.groupby('MÃ_MÁY').agg({'NGÀY': 'count', 'CP': 'sum', 'KHÁCH': 'first', 'LINH_KIỆN': lambda x: ', '.join(set(x))}).reset_index()
+        health.columns = ['Mã Máy', 'Lần hỏng', 'Tổng phí', 'Khách hàng', 'Lịch sử linh kiện']
+        danger_zone = health[health['Lần hỏng'] > 2].sort_values('Lần hỏng', ascending=False)
+        st.dataframe(danger_zone.style.format({"Tổng phí": "{:,.0f} đ"}), use_container_width=True)
+
+    with tabs[3]: # KHO LOGISTICS (NIÊM PHONG)
         wh_data = []
         for reg, raw in [("MIỀN BẮC", df_bac_raw), ("MIỀN TRUNG", df_trung_raw)]:
             if not raw.empty:
                 for _, r in raw.iloc[1:].iterrows():
                     m_id = str(r.iloc[1]).strip()
                     if not m_id or "MÃ" in m_id.upper(): continue
-                    # Logic nhận diện trạng thái
                     st_nb, st_ng, st_giao = (str(r.iloc[6]) + str(r.iloc[8])).upper(), (str(r.iloc[9]) + str(r.iloc[11])).upper(), str(r.iloc[13]).upper()
                     if "R" in st_giao: tt = "🟢 ĐÃ TRẢ CHI NHÁNH"
                     elif "OK" in st_nb: tt = "🔵 ĐANG NẰM KHO NHẬN"
@@ -96,20 +114,16 @@ def main():
             df_wh = pd.DataFrame(wh_data)
             st.plotly_chart(px.histogram(df_wh, x="VÙNG", color="TRẠNG_THÁI", barmode="group", color_discrete_map={"🟢 ĐÃ TRẢ CHI NHÁNH": "#FF8C00", "🔵 ĐANG NẰM KHO NHẬN": "#F39C12", "🟡 ĐANG SỬA NGOÀI": "#D35400"}), use_container_width=True)
 
-    with tabs[4]: # NÂNG CẤP AI MODULE 1 & 2
+    with tabs[4]: # AI ĐỀ XUẤT (MODULE 1 & 2)
         st.subheader("🧠 TRỢ LÝ CHIẾN LƯỢC AI (MODULE 1 & 2)")
-        
-        # MODULE 1: PHÂN TÍCH BỆNH LÝ VÙNG MIỀN
         col_m1, col_m2 = st.columns([2, 1])
         with col_m1:
             v_error = df_display.groupby(['VÙNG', 'LINH_KIỆN']).size().reset_index(name='Ca')
             st.plotly_chart(px.bar(v_error, x='LINH_KIỆN', y='Ca', color='VÙNG', barmode='group', color_discrete_sequence=ORANGE_COLORS), use_container_width=True)
         with col_m2:
-            st.info("💡 **Dự báo kho:** AI phát hiện xu hướng hỏng hóc khác biệt giữa hai miền. Sếp nên cân đối linh kiện dự phòng theo biểu đồ bên cạnh.")
+            st.info("💡 **Dự báo kho:** AI phát hiện xu hướng hỏng hóc khác biệt giữa hai miền. Hãy cân đối linh kiện dự phòng theo biểu đồ.")
 
         st.divider()
-
-        # MODULE 2: KIỂM TOÁN CHI PHÍ (AUDIT)
         st.markdown("#### ⚠️ Cảnh báo chi phí bất thường (>150% trung bình)")
         lk_avg = df_f.groupby('LINH_KIỆN')['CP'].mean().reset_index(name='Gia_TB')
         df_audit = df_display.merge(lk_avg, on='LINH_KIỆN')
@@ -117,7 +131,6 @@ def main():
         
         if not anomalies.empty:
             st.dataframe(anomalies[['MÃ_MÁY', 'LINH_KIỆN', 'CP', 'Gia_TB', 'VÙNG']].style.format({"CP": "{:,.0f}", "Gia_TB": "{:,.0f}"}), use_container_width=True)
-            st.error("AI khuyến nghị sếp hậu kiểm các ca trên để tránh thất thoát ngân sách.")
         else:
             st.success("✅ Không phát hiện bất thường chi phí.")
 
