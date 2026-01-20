@@ -139,13 +139,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# --- SMART ADVISOR (APPLE STYLE) ---
-with st.expander("💡 LỜI KHUYÊN TỪ TRỢ LÝ AI HÔM NAY", expanded=True):
-    avg_cp = df_display['CP'].mean()
-    if avg_cp > 500000:
-        st.error(f"⚠️ Chi phí trung bình mỗi ca đang cao ({avg_cp:,.0f}đ). Sếp nên kiểm tra lại đơn giá linh kiện thay thế.")
-    else:
-        st.success("✅ Chi phí vận hành đang nằm trong ngưỡng tối ưu.")
-        
-    top_vung = df_display.groupby('VÙNG')['CP'].sum().idxmax()
-    st.info(f"📍 {top_vung} đang là vùng tiêu tốn ngân sách nhất tháng này. Cần chú trọng giám sát kho tại đây.")
+
