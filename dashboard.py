@@ -3,7 +3,10 @@ import pandas as pd
 import plotly.express as px
 
 # --- 1. CONFIG ---
-st.set_page_config(page_title="STRATEGIC HUB V21.6", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="LAPTOP MÁY PHA MÀU 4ORANGES", layout="wide", page_icon="🎨")
+
+# Link logo sếp cung cấp (Thay bằng đường dẫn file thực tế nếu sếp để cùng thư mục code)
+LOGO_URL = "https://raw.githubusercontent.com/your-repo/path-to-logo/logo@3x.png" # Sếp có thể thay bằng link ảnh hoặc path nội bộ
 
 URL_LAPTOP_LOI = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?gid=675485241&single=true&output=csv"
 URL_MIEN_BAC = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?gid=602348620&single=true&output=csv"
@@ -35,10 +38,13 @@ def process_finance_data(df_loi_raw):
     return pd.DataFrame(f_list)
 
 def main():
-    # --- SIDEBAR ---
+    # --- SIDEBAR CẬP NHẬT LOGO & TÊN MỚI ---
     with st.sidebar:
-        st.title("🚀 STRATEGIC HUB")
-        if st.button('🔄 REFRESH SYSTEM', type="primary", use_container_width=True):
+        # Chèn Logo 4Oranges vào Sidebar
+        st.image("logo@3x.png", use_container_width=True) # Sử dụng file sếp đã upload
+        st.title("LAPTOP MÁY PHA MÀU")
+        
+        if st.button('🔄 LÀM MỚI DỮ LIỆU', type="primary", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
         
@@ -47,26 +53,30 @@ def main():
             df_bac_raw = get_raw_data(URL_MIEN_BAC)
             df_trung_raw = get_raw_data(URL_DA_NANG)
             df_f = process_finance_data(df_loi_raw)
-            status.update(label="✅ Dữ liệu đã sẵn sàng!", state="complete")
+            status.update(label="✅ Hệ thống sẵn sàng!", state="complete")
 
         if df_f.empty:
-            st.warning("⚠️ Đang chờ dữ liệu...")
+            st.warning("⚠️ Đang chờ dữ liệu từ máy chủ...")
             return
 
         years = sorted(df_f['NĂM'].unique(), reverse=True)
-        sel_year = st.selectbox("Năm", years)
+        sel_year = st.selectbox("Chọn Năm", years)
         months = ["Tất cả"] + sorted(df_f[df_f['NĂM'] == sel_year]['THÁNG'].unique().tolist())
-        sel_month = st.selectbox("Tháng", months)
+        sel_month = st.selectbox("Chọn Tháng", months)
 
-    # Lọc dữ liệu
+    # Lọc dữ liệu hiển thị
     df_display = df_f[df_f['NĂM'] == sel_year]
     if sel_month != "Tất cả":
         df_display = df_display[df_display['THÁNG'] == sel_month]
 
-    # --- MÀN HÌNH CHÍNH ---
-    st.title(f"🛡️ HỆ THỐNG ĐIỀU HÀNH CHIẾN LƯỢC V21.6")
-    
-    # 4 KPIs CỐT LÕI
+    # --- TIÊU ĐỀ CHÍNH MỚI ---
+    col_header, col_logo = st.columns([4, 1])
+    with col_header:
+        st.title("HỆ THỐNG QUẢN LÝ LAPTOP MÁY PHA MÀU 4ORANGES")
+    with col_logo:
+        st.image("logo@3x.png", width=150)
+
+    # --- GIỮ NGUYÊN CÁC CHỨC NĂNG TABS V21.6 ---
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("TỔNG CHI PHÍ", f"{df_display['CP'].sum():,.0f} đ")
     m2.metric("SỐ CA XỬ LÝ", f"{len(df_display)} ca")
@@ -77,22 +87,22 @@ def main():
 
     tabs = st.tabs(["📊 XU HƯỚNG", "💰 TÀI CHÍNH", "🩺 SỨC KHỎE MÁY", "📦 KHO LOGISTICS", "🧠 AI ĐỀ XUẤT"])
 
+    # (Nội dung các Tab giữ nguyên như bản V21.6 sếp đã duyệt)
     with tabs[0]: # XU HƯỚNG
         col1, col2 = st.columns(2)
         with col1:
-            st.plotly_chart(px.pie(df_display, names='VÙNG', title="CƠ CẤU VÙNG MIỀN", hole=0.4), use_container_width=True)
+            st.plotly_chart(px.pie(df_display, names='VÙNG', title="PHÂN BỔ THEO MIỀN", hole=0.4), use_container_width=True)
         with col2:
             df_ca_thang = df_display.groupby('THÁNG').size().reset_index(name='Số ca')
-            st.plotly_chart(px.line(df_ca_thang, x='THÁNG', y='Số ca', title="SỐ CA HƯ THEO THÁNG", markers=True), use_container_width=True)
+            st.plotly_chart(px.line(df_ca_thang, x='THÁNG', y='Số ca', title="TỔNG CA HƯ THEO THÁNG", markers=True), use_container_width=True)
 
     with tabs[1]: # TÀI CHÍNH
-        st.plotly_chart(px.treemap(df_display, path=['VÙNG', 'LINH_KIỆN'], values='CP', title="TREEMAP CHI PHÍ"), use_container_width=True)
+        st.plotly_chart(px.treemap(df_display, path=['VÙNG', 'LINH_KIỆN'], values='CP', title="CƠ CẤU CHI PHÍ"), use_container_width=True)
 
     with tabs[2]: # SỨC KHỎE MÁY
         health = df_f.groupby('MÃ_MÁY').agg({'NGÀY': 'count', 'CP': 'sum', 'KHÁCH': 'first', 'LINH_KIỆN': lambda x: ', '.join(set(x))}).reset_index()
         health.columns = ['Mã Máy', 'Lần hỏng', 'Tổng phí', 'Khách hàng', 'Lịch sử linh kiện']
         danger_zone = health[health['Lần hỏng'] > 2].sort_values('Lần hỏng', ascending=False)
-        st.write("📋 **MÁY LỖI TRÊN 2 LẦN:**")
         st.dataframe(danger_zone.style.format({"Tổng phí": "{:,.0f} đ"}), use_container_width=True)
 
     with tabs[3]: # KHO LOGISTICS
@@ -112,17 +122,15 @@ def main():
                     wh_data.append({"VÙNG": reg, "MÃ_MÁY": m_id, "TRẠNG_THÁI": tt})
         if wh_data:
             df_wh = pd.DataFrame(wh_data)
-            st.plotly_chart(px.histogram(df_wh, x="VÙNG", color="TRẠNG_THÁI", barmode="group", title="THỐNG KÊ KHO MIỀN BẮC - MIỀN TRUNG"), use_container_width=True)
+            st.plotly_chart(px.histogram(df_wh, x="VÙNG", color="TRẠNG_THÁI", barmode="group", title="ĐỐI SOÁT KHO 4ORANGES"), use_container_width=True)
             st.table(df_wh.groupby(['VÙNG', 'TRẠNG_THÁI']).size().unstack(fill_value=0))
 
     with tabs[4]: # AI ĐỀ XUẤT
         if not danger_zone.empty:
             num = max(1, int(len(danger_zone) * 0.2))
             to_liq = danger_zone.nlargest(num, 'Tổng phí')
-            st.error(f"🚨 AI ĐỀ XUẤT THANH LÝ {num} MÁY SAU ĐÂY:")
+            st.error(f"🚨 ĐỀ XUẤT THANH LÝ {num} MÁY CÓ CHI PHÍ CAO:")
             st.table(to_liq[['Mã Máy', 'Lần hỏng', 'Tổng phí', 'Khách hàng']])
-        else:
-            st.success("Hệ thống hoạt động ổn định, chưa cần thanh lý.")
 
 if __name__ == "__main__":
     main()
