@@ -5,16 +5,17 @@ import plotly.express as px
 # --- 1. CONFIG ---
 st.set_page_config(page_title="LAPTOP MÁY PHA MÀU 4ORANGES", layout="wide", page_icon="🎨")
 
-# Link Logo dự phòng (Sếp có thể thay link này bằng link ảnh chính thức của công ty)
+# Bảng màu cam đặc trưng của 4ORANGES
+ORANGE_COLORS = ["#FF8C00", "#FFA500", "#FF4500", "#E67E22", "#D35400"]
 
+LOGO_URL = "https://www.4oranges.com/vnt_upload/weblink/Logo_4_Oranges.png"
 URL_LAPTOP_LOI = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?gid=675485241&single=true&output=csv"
 URL_MIEN_BAC = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?gid=602348620&single=true&output=csv"
 URL_DA_NANG = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?gid=1519063387&single=true&output=csv"
 
 @st.cache_data(ttl=300)
 def get_raw_data(url):
-    try:
-        return pd.read_csv(url, on_bad_lines='skip', low_memory=False).fillna("")
+    try: return pd.read_csv(url, on_bad_lines='skip', low_memory=False).fillna("")
     except: return pd.DataFrame()
 
 @st.cache_data(ttl=300)
@@ -39,22 +40,17 @@ def process_finance_data(df_loi_raw):
 def main():
     # --- SIDEBAR ---
     with st.sidebar:
-        try:
-            st.image(LOGO_URL, use_container_width=True)
-        except:
-            st.title("4ORANGES")
-        
+        try: st.image(LOGO_URL, use_container_width=True)
+        except: st.title("🎨 4ORANGES")
         st.subheader("LAPTOP MÁY PHA MÀU")
         if st.button('🔄 LÀM MỚI DỮ LIỆU', type="primary", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
         
-        with st.status("📡 Đang đồng bộ...", expanded=False) as status:
-            df_loi_raw = get_raw_data(URL_LAPTOP_LOI)
-            df_bac_raw = get_raw_data(URL_MIEN_BAC)
-            df_trung_raw = get_raw_data(URL_DA_NANG)
-            df_f = process_finance_data(df_loi_raw)
-            status.update(label="✅ Hệ thống sẵn sàng!", state="complete")
+        df_loi_raw = get_raw_data(URL_LAPTOP_LOI)
+        df_bac_raw = get_raw_data(URL_MIEN_BAC)
+        df_trung_raw = get_raw_data(URL_DA_NANG)
+        df_f = process_finance_data(df_loi_raw)
 
         if df_f.empty:
             st.warning("⚠️ Đang chờ dữ liệu...")
@@ -65,41 +61,56 @@ def main():
         months = ["Tất cả"] + sorted(df_f[df_f['NĂM'] == sel_year]['THÁNG'].unique().tolist())
         sel_month = st.selectbox("Chọn Tháng", months)
 
-    # --- TIÊU ĐỀ CHÍNH ---
-    st.title("HỆ THỐNG QUẢN LÝ LAPTOP MÁY PHA MÀU 4ORANGES")
-    st.divider()
-
-    # FILTER DATA
+    # FILTER
     df_display = df_f[df_f['NĂM'] == sel_year]
     if sel_month != "Tất cả":
         df_display = df_display[df_display['THÁNG'] == sel_month]
 
-    # KPIs
+    st.title("HỆ THỐNG QUẢN LÝ LAPTOP MÁY PHA MÀU 4ORANGES")
+    st.divider()
+
+    # KPI CARDS
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("TỔNG CHI PHÍ", f"{df_display['CP'].sum():,.0f} đ")
     m2.metric("SỐ CA XỬ LÝ", f"{len(df_display)} ca")
-    m3.metric("TB/CA", f"{(df_display['CP'].mean() if len(df_display)>0 else 0):,.0f} đ")
-    m4.metric("LỖI PHỔ BIẾN", df_display['LINH_KIỆN'].value_counts().idxmax() if not df_display.empty else "N/A")
+    m3.metric("TRUNG BÌNH/CA", f"{(df_display['CP'].mean() if len(df_display)>0 else 0):,.0f} đ")
+    m4.metric("VÙNG CHI PHÍ CAO", df_display.groupby('VÙNG')['CP'].sum().idxmax() if not df_display.empty else "N/A")
 
-    tabs = st.tabs(["📊 XU HƯỚNG", "💰 TÀI CHÍNH", "🩺 SỨC KHỎE MÁY", "📦 KHO LOGISTICS", "🧠 AI ĐỀ XUẤT"])
+    tabs = st.tabs(["📊 XU HƯỚNG", "💰 TÀI CHÍNH CHUYÊN SÂU", "🩺 SỨC KHỎE MÁY", "📦 KHO LOGISTICS", "🧠 AI ĐỀ XUẤT"])
 
-    with tabs[0]: # XU HƯỚNG
+    with tabs[0]: # XU HƯỚNG MÀU CAM
         c1, c2 = st.columns(2)
-        with c1: st.plotly_chart(px.pie(df_display, names='VÙNG', title="PHÂN BỔ THEO MIỀN", hole=0.4), use_container_width=True)
-        with c2: 
+        with c1:
+            fig_pie = px.pie(df_display, names='VÙNG', title="CƠ CẤU CA HƯ THEO MIỀN", hole=0.4, color_discrete_sequence=ORANGE_COLORS)
+            st.plotly_chart(fig_pie, use_container_width=True)
+        with c2:
             df_t = df_display.groupby('THÁNG').size().reset_index(name='Số ca')
-            st.plotly_chart(px.line(df_t, x='THÁNG', y='Số ca', title="TỔNG CA HƯ THEO THÁNG", markers=True), use_container_width=True)
+            fig_line = px.line(df_t, x='THÁNG', y='Số ca', title="TỔNG CA HƯ THEO THÁNG", markers=True, color_discrete_sequence=["#FF8C00"])
+            st.plotly_chart(fig_line, use_container_width=True)
 
-    with tabs[1]: # TÀI CHÍNH
-        st.plotly_chart(px.treemap(df_display, path=['VÙNG', 'LINH_KIỆN'], values='CP', title="CƠ CẤU CHI PHÍ"), use_container_width=True)
+    with tabs[1]: # TÀI CHÍNH CHUYÊN SÂU
+        st.subheader("🔍 PHÂN TÍCH SÂU CHI PHÍ & TẦN SUẤT")
+        # Phân tích sâu: Linh kiện nào đắt và linh kiện nào hay hỏng
+        deep_df = df_display.groupby('LINH_KIỆN').agg({'CP': ['sum', 'count', 'mean']}).reset_index()
+        deep_df.columns = ['LINH_KIỆN', 'Tổng_CP', 'Số_lần_hỏng', 'Trung_bình_CP']
+        
+        col_f1, col_f2 = st.columns([2, 1])
+        with col_f1:
+            fig_scatter = px.scatter(deep_df, x="Số_lần_hỏng", y="Tổng_CP", size="Trung_bình_CP", color="LINH_KIỆN",
+                                     title="MỐI TƯƠNG QUAN TẦN SUẤT VÀ TỔNG CHI PHÍ", color_discrete_sequence=px.colors.sequential.Oranges_r)
+            st.plotly_chart(fig_scatter, use_container_width=True)
+        with col_f2:
+            st.write("**Gợi ý chiến lược:** Những linh kiện nằm ở góc **trên cùng bên phải** là những món cần tối ưu hợp đồng với đối tác cung cấp ngay vì tốn nhiều tiền nhất.")
+        
+        st.plotly_chart(px.treemap(df_display, path=['VÙNG', 'LINH_KIỆN'], values='CP', title="CƠ CẤU CHI PHÍ CHI TIẾT (CAM)", color_discrete_sequence=ORANGE_COLORS), use_container_width=True)
 
-    with tabs[2]: # SỨC KHỎE MÁY
+    with tabs[2]: # SỨC KHỎE MÁY (GIỮ NGUYÊN)
         health = df_f.groupby('MÃ_MÁY').agg({'NGÀY': 'count', 'CP': 'sum', 'KHÁCH': 'first', 'LINH_KIỆN': lambda x: ', '.join(set(x))}).reset_index()
         health.columns = ['Mã Máy', 'Lần hỏng', 'Tổng phí', 'Khách hàng', 'Lịch sử linh kiện']
         danger_zone = health[health['Lần hỏng'] > 2].sort_values('Lần hỏng', ascending=False)
         st.dataframe(danger_zone.style.format({"Tổng phí": "{:,.0f} đ"}), use_container_width=True)
 
-    with tabs[3]: # KHO LOGISTICS
+    with tabs[3]: # KHO LOGISTICS (MIỀN BẮC - MIỀN TRUNG)
         wh_data = []
         for reg, raw in [("MIỀN BẮC", df_bac_raw), ("MIỀN TRUNG", df_trung_raw)]:
             if not raw.empty:
@@ -116,14 +127,15 @@ def main():
                     wh_data.append({"VÙNG": reg, "MÃ_MÁY": m_id, "TRẠNG_THÁI": tt})
         if wh_data:
             df_wh = pd.DataFrame(wh_data)
-            st.plotly_chart(px.histogram(df_wh, x="VÙNG", color="TRẠNG_THÁI", barmode="group", title="ĐỐI SOÁT KHO 4ORANGES"), use_container_width=True)
+            fig_hist = px.histogram(df_wh, x="VÙNG", color="TRẠNG_THÁI", barmode="group", title="ĐỐI SOÁT KHO 4ORANGES", color_discrete_map={"🟢 ĐÃ TRẢ CHI NHÁNH": "#FF8C00", "🔵 ĐANG NẰM KHO NHẬN": "#F39C12", "🟡 ĐANG SỬA NGOÀI": "#D35400", "⚪ CHỜ KIỂM TRA": "#BDC3C7"})
+            st.plotly_chart(fig_hist, use_container_width=True)
             st.table(df_wh.groupby(['VÙNG', 'TRẠNG_THÁI']).size().unstack(fill_value=0))
 
     with tabs[4]: # AI ĐỀ XUẤT
         if not danger_zone.empty:
             num = max(1, int(len(danger_zone) * 0.2))
             to_liq = danger_zone.nlargest(num, 'Tổng phí')
-            st.error(f"🚨 ĐỀ XUẤT THANH LÝ {num} MÁY CÓ CHI PHÍ CAO:")
+            st.error(f"🚨 ĐỀ XUẤT CHIẾN LƯỢC: THANH LÝ {num} THIẾT BỊ NGỐN PHÍ NHẤT")
             st.table(to_liq[['Mã Máy', 'Lần hỏng', 'Tổng phí', 'Khách hàng']])
 
 if __name__ == "__main__":
