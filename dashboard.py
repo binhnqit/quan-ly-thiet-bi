@@ -36,17 +36,18 @@ def process_finance_data(df_loi_raw):
     return pd.DataFrame(f_list)
 
 def main():
+    # --- LOAD DỮ LIỆU ĐẦU TIÊN ĐỂ TRÁNH LỖI NAMEERROR ---
+    df_loi_raw = get_raw_data(URL_LAPTOP_LOI)
+    df_bac_raw = get_raw_data(URL_MIEN_BAC)
+    df_trung_raw = get_raw_data(URL_DA_NANG)
+    df_f = process_finance_data(df_loi_raw)
+
     with st.sidebar:
         try: st.image(LOGO_URL, use_container_width=True)
         except: st.title("🎨 4ORANGES")
         if st.button('🔄 LÀM MỚI DỮ LIỆU', type="primary", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-        
-        df_loi_raw = get_raw_data(URL_LAPTOP_LOI)
-        df_bac_raw = get_raw_data(URL_MIEN_BAC)
-        df_trung_raw = get_raw_data(URL_DA_NANG)
-        df_f = process_finance_data(df_loi_raw)
 
         if df_f.empty:
             st.warning("⚠️ Đang chờ dữ liệu...")
@@ -64,32 +65,34 @@ def main():
     st.title("HỆ THỐNG QUẢN LÝ LAPTOP MÁY PHA MÀU 4ORANGES")
     st.divider()
 
-    # KPI CARDS (BẢO TOÀN SỐ LIỆU)
+    # KPI CARDS
     m1, m2, m3, m4 = st.columns(4)
-    total_spent = df_display['CP'].sum()
-    m1.metric("TỔNG CHI PHÍ", f"{total_spent:,.0f} đ")
+    m1.metric("TỔNG CHI PHÍ", f"{df_display['CP'].sum():,.0f} đ")
     m2.metric("SỐ CA XỬ LÝ", f"{len(df_display)} ca")
     m3.metric("TRUNG BÌNH/CA", f"{(df_display['CP'].mean() if len(df_display)>0 else 0):,.0f} đ")
     m4.metric("VÙNG CHI PHÍ CAO", df_display.groupby('VÙNG')['CP'].sum().idxmax() if not df_display.empty else "N/A")
 
     tabs = st.tabs(["📊 XU HƯỚNG", "💰 TÀI CHÍNH CHUYÊN SÂU", "🩺 SỨC KHỎE MÁY", "📦 KHO LOGISTICS", "🧠 AI ĐỀ XUẤT"])
 
-    with tabs[1]: # FIX LỖI VALUEERROR TẠI ĐÂY
-        st.subheader("🔍 PHÂN TÍCH SÂU CHI PHÍ & TẦN SUẤT")
+    with tabs[0]: # XU HƯỚNG
+        c1, c2 = st.columns(2)
+        with c1: st.plotly_chart(px.pie(df_display, names='VÙNG', hole=0.4, color_discrete_sequence=ORANGE_COLORS), use_container_width=True)
+        with c2: st.plotly_chart(px.line(df_display.groupby('THÁNG').size().reset_index(name='Số ca'), x='THÁNG', y='Số ca', markers=True, color_discrete_sequence=["#FF8C00"]), use_container_width=True)
+
+    with tabs[1]: # TÀI CHÍNH
         deep_df = df_display.groupby('LINH_KIỆN').agg({'CP': ['sum', 'count', 'mean']}).reset_index()
         deep_df.columns = ['LINH_KIỆN', 'Tổng_CP', 'Số_lần_hỏng', 'Trung_bình_CP']
-        # Đảm bảo size luôn là số dương để tránh crash biểu đồ
-        deep_df['Size_Bong_Bong'] = deep_df['Trung_bình_CP'].apply(lambda x: max(x, 1))
-        
-        try:
-            st.plotly_chart(px.scatter(deep_df, x="Số_lần_hỏng", y="Tổng_CP", size="Size_Bong_Bong", color="LINH_KIỆN",
-                                     title="TƯƠNG QUAN TẦN SUẤT & CHI PHÍ", color_discrete_sequence=px.colors.sequential.Oranges_r), use_container_width=True)
-        except:
-            st.error("⚠️ Không thể hiển thị biểu đồ phân tán do dữ liệu có giá trị không hợp lệ.")
-        
-        st.plotly_chart(px.treemap(df_display, path=['VÙNG', 'LINH_KIỆN'], values='CP', title="CƠ CẤU CHI PHÍ CHI TIẾT", color_discrete_sequence=ORANGE_COLORS), use_container_width=True)
+        deep_df['Size_Plot'] = deep_df['Trung_bình_CP'].apply(lambda x: max(x, 1))
+        st.plotly_chart(px.scatter(deep_df, x="Số_lần_hỏng", y="Tổng_CP", size="Size_Plot", color="LINH_KIỆN", color_discrete_sequence=px.colors.sequential.Oranges_r), use_container_width=True)
+        st.plotly_chart(px.treemap(df_display, path=['VÙNG', 'LINH_KIỆN'], values='CP', color_discrete_sequence=ORANGE_COLORS), use_container_width=True)
 
-    with tabs[3]: # KHO LOGISTICS (NIÊM PHONG LOGIC R/OK)
+    with tabs[2]: # SỨC KHỎE MÁY
+        health = df_f.groupby('MÃ_MÁY').agg({'NGÀY': 'count', 'CP': 'sum', 'KHÁCH': 'first', 'LINH_KIỆN': lambda x: ', '.join(set(x))}).reset_index()
+        health.columns = ['Mã Máy', 'Lần hỏng', 'Tổng phí', 'Khách hàng', 'Lịch sử linh kiện']
+        danger_zone = health[health['Lần hỏng'] > 2].sort_values('Lần hỏng', ascending=False)
+        st.dataframe(danger_zone.style.format({"Tổng phí": "{:,.0f} đ"}), use_container_width=True)
+
+    with tabs[3]: # KHO LOGISTICS (NIÊM PHONG LOGIC)
         wh_data = []
         for reg, raw in [("MIỀN BẮC", df_bac_raw), ("MIỀN TRUNG", df_trung_raw)]:
             if not raw.empty:
@@ -106,61 +109,5 @@ def main():
             df_wh = pd.DataFrame(wh_data)
             st.plotly_chart(px.histogram(df_wh, x="VÙNG", color="TRẠNG_THÁI", barmode="group", color_discrete_map={"🟢 ĐÃ TRẢ CHI NHÁNH": "#FF8C00", "🔵 ĐANG NẰM KHO NHẬN": "#F39C12", "🟡 ĐANG SỬA NGOÀI": "#D35400"}), use_container_width=True)
 
-    with tabs[4]: # NÂNG CẤP MODULE 1 & 2 THEO LỘ TRÌNH AI CTO
-        st.subheader("🧠 TRỢ LÝ CHIẾN LƯỢC AI (MODULE 1 & 2)")
-        
-        # Module 1: Phân tích bệnh lý vùng miền
-        col_m1, col_m2 = st.columns([2, 1])
-        with col_m1:
-            v_error = df_display.groupby(['VÙNG', 'LINH_KIỆN']).size().reset_index(name='Ca')
-            st.plotly_chart(px.bar(v_error, x='LINH_KIỆN', y='Ca', color='VÙNG', barmode='group', color_discrete_sequence=ORANGE_COLORS), use_container_width=True)
-        with col_m2:
-            st.info("💡 **Dự báo kho:** AI phát hiện xu hướng hỏng hóc khác biệt giữa các miền. Sếp nên ưu tiên dự phòng linh kiện theo đặc thù khu vực để giảm thời gian máy nằm chờ sửa.")
-
-        st.divider()
-
-        # Module 2: Kiểm toán chi phí bất thường
-        st.markdown("#### ⚠️ Cảnh báo chi phí bất thường (>150% trung bình loại)")
-        lk_avg = df_f.groupby('LINH_KIỆN')['CP'].mean().reset_index(name='Gia_TB')
-        df_audit = df_display.merge(lk_avg, on='LINH_KIỆN')
-        anomalies = df_audit[df_audit['CP'] > df_audit['Gia_TB'] * 1.5]
-        
-        if not anomalies.empty:
-            st.dataframe(anomalies[['MÃ_MÁY', 'LINH_KIỆN', 'CP', 'Gia_TB', 'VÙNG']].style.format({"CP": "{:,.0f}", "Gia_TB": "{:,.0f}"}), use_container_width=True)
-            st.error("AI khuyến nghị sếp hậu kiểm các ca trên để tránh tình trạng thợ 'vẽ bệnh' hoặc báo giá linh kiện sai lệch.")
-        else:
-            st.success("✅ Hệ thống chưa phát hiện bất thường về chi phí trong kỳ này.")
-        # --- Thêm đoạn này vào trong Tab 4 (AI ĐỀ XUẤT) của hàm main() ---
-
-st.divider()
-st.markdown("#### 🔮 Module 3: Dự báo bảo trì chủ động (Predictive Maintenance)")
-
-# 1. Tính toán ngày cách biệt từ lần sửa cuối
-df_predict = df_f.sort_values(['MÃ_MÁY', 'NGÀY'])
-df_predict['Ngay_Truoc'] = df_predict.groupby('MÃ_MÁY')['NGÀY'].shift(1)
-df_predict['Khoang_Cach'] = (df_predict['NGÀY'] - df_predict['Ngay_Truoc']).dt.days
-
-# Tính khoảng cách trung bình giữa các lần hỏng của toàn hệ thống
-avg_gap = df_predict['Khoang_Cach'].mean() if not df_predict['Khoang_Cach'].dropna().empty else 90
-
-col_p1, col_p2 = st.columns([1, 2])
-with col_p1:
-    st.metric("NHỊP HỎNG TB (Ngày)", f"{avg_gap:.0f} ngày")
-    st.write(f"👉 AI nhận định: Cứ sau khoảng **{avg_gap:.0f} ngày**, thiết bị có xu hướng phát sinh lỗi mới.")
-
-with col_p2:
-    # Tìm các máy đã quá "nhịp hỏng" kể từ lần sửa cuối (giả sử hôm nay là ngày cuối cùng trong data)
-    last_date = df_f['NGÀY'].max()
-    latest_repair = df_f.groupby('MÃ_MÁY')['NGÀY'].max().reset_index()
-    latest_repair['Days_Since'] = (last_date - latest_repair['NGÀY']).dt.days
-    
-    # Cảnh báo các máy đang nằm trong "Vùng nguy hiểm" (gần đến nhịp hỏng tiếp theo)
-    warning_machines = latest_repair[(latest_repair['Days_Since'] > avg_gap * 0.8) & (latest_repair['Days_Since'] < avg_gap * 1.2)]
-    
-    if not warning_machines.empty:
-        st.warning(f"Phát hiện {len(warning_machines)} máy đang chạm ngưỡng hỏng hóc dự báo.")
-        st.write("Sếp nên yêu cầu kỹ thuật kiểm tra tổng thể các máy này:")
-        st.dataframe(warning_machines[['MÃ_MÁY', 'Days_Since']].rename(columns={'Days_Since': 'Số ngày đã chạy ổn định'}))
-    else:
-        st.success("✅ Hiện tại các thiết bị vẫn đang trong vòng đời an toàn.")
-if __name__ == "__main__": main()
+    with tabs[4]: # --- MODULE 3: PREDICTIVE MAINTENANCE ---
+        st.subheader("🔮 DỰ BÁO
