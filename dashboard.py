@@ -130,7 +130,7 @@ def main():
             st.error("AI khuyến nghị sếp hậu kiểm các ca trên để tránh tình trạng thợ 'vẽ bệnh' hoặc báo giá linh kiện sai lệch.")
         else:
             st.success("✅ Hệ thống chưa phát hiện bất thường về chi phí trong kỳ này.")
-# --- Thêm đoạn này vào trong Tab 4 (AI ĐỀ XUẤT) của hàm main() ---
+        # --- Thêm đoạn này vào trong Tab 4 (AI ĐỀ XUẤT) của hàm main() ---
 
 st.divider()
 st.markdown("#### 🔮 Module 3: Dự báo bảo trì chủ động (Predictive Maintenance)")
