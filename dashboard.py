@@ -1,62 +1,102 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import time
 
-# --- CẤU HÌNH TRỰC TIẾP ---
-st.set_page_config(page_title="Hệ Thống Thực V1800", layout="wide")
+# --- CẤU HÌNH HỆ THỐNG V2000 ---
+st.set_page_config(page_title="Hệ Thống Live Data V2000", layout="wide")
 
-# SẾP DÁN CÁI LINK TRÌNH DUYỆT CỦA FILE SHEETS VÀO ĐÂY
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1GaWsUJutV4wixR3RUBZSTIMrgaD8fOIi/edit?gid=675485241#gid=675485241"
+def get_clean_url(url):
+    # Tự động chuyển đổi các loại link Sheets về định dạng Export CSV
+    if "/edit" in url:
+        return url.split("/edit")[0] + "/export?format=csv&gid=0"
+    if "pub?output=csv" in url:
+        return url + f"&cachebuster={int(time.time())}"
+    return url
 
-def load_data_direct():
+# Link hiện tại của sếp
+SHEET_LINK = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
+
+@st.cache_data(ttl=1)
+def load_data_expert_v2():
     try:
-        # Chuyển đổi link Sheets sang dạng Export để lấy dữ liệu SỐNG
-        # Nếu link có dạng /edit, ta đổi thành /export
-        url = SHEET_URL.replace('/edit#gid=', '/export?format=csv&gid=')
-        if '/pub?output=csv' in url:
-            # Nếu vẫn dùng link pub, ta thêm tham số thời gian cực mạnh để phá cache
-            url += f"&refresh={pd.Timestamp.now().timestamp()}"
+        final_url = get_clean_url(SHEET_LINK)
+        # Đọc dữ liệu thô, không lấy Header để tránh lỗi lệch cột
+        df_raw = pd.read_csv(final_url, dtype=str, header=None).fillna("")
         
-        df = pd.read_csv(url, dtype=str).fillna("")
-        
-        # Làm sạch dữ liệu
-        clean_data = []
-        last_date = None
-        
-        for _, row in df.iterrows():
-            m_date = str(row.iloc[0]).strip()
-            m_may = str(row.iloc[1]).strip()
+        valid_rows = []
+        # Biến nhớ để "Điền vào chỗ trống"
+        memo = {"ngay": None, "khach": "N/A", "vung": "N/A"}
+
+        for i, row in df_raw.iterrows():
+            if i == 0: continue # Bỏ qua dòng tiêu đề của Sheets
             
-            # Logic điền trống ngày tháng
-            parsed_date = pd.to_datetime(m_date, dayfirst=True, errors='coerce')
-            if pd.notnull(parsed_date): last_date = parsed_date
+            # Đọc giá trị từng cột
+            val_date = str(row.iloc[0]).strip()
+            val_may = str(row.iloc[1]).strip()
+            val_kh = str(row.iloc[2]).strip()
+            val_vung = str(row.iloc[5]).strip().upper()
+
+            # 1. LOGIC ĐIỀN TRỐNG (DATA HEALING)
+            # Cập nhật Ngày nếu có, không thì dùng ngày dòng trước
+            d_parsed = pd.to_datetime(val_date, dayfirst=True, errors='coerce')
+            if pd.notnull(d_parsed): memo["ngay"] = d_parsed
             
-            # CHỈ LẤY DÒNG CÓ MÃ MÁY (Để diệt số 1736 ảo)
-            if m_may and len(m_may) > 1 and last_date:
-                clean_data.append({
-                    "NGÀY": last_date,
-                    "MÃ_MÁY": m_may,
-                    "KHÁCH": row.iloc[2],
-                    "VÙNG": str(row.iloc[5]).upper()
-                })
-        return pd.DataFrame(clean_data)
-    except:
-        return pd.DataFrame()
+            # Cập nhật Khách/Vùng nếu có
+            if val_kh: memo["khach"] = val_kh
+            if val_vung: memo["vung"] = val_vung
+
+            # 2. CHỐT CHẶN RÁC (BỨC PHÁ)
+            # Chỉ lưu nếu dòng này CÓ MÃ MÁY thực sự
+            if val_may and len(val_may) > 1 and "MÃ" not in val_may.upper():
+                if memo["ngay"]:
+                    valid_rows.append({
+                        "NGÀY": memo["ngay"],
+                        "NĂM": memo["ngay"].year,
+                        "THÁNG": memo["ngay"].month,
+                        "MÃ_MÁY": val_may,
+                        "KHÁCH_HÀNG": memo["khach"],
+                        "VÙNG": "BẮC" if "BẮC" in memo["vung"] else ("TRUNG" if "TRUNG" in memo["vung"] else "NAM")
+                    })
+        
+        return pd.DataFrame(valid_rows), len(df_raw)
+    except Exception as e:
+        st.error(f"Lỗi kết nối trực tiếp: {e}")
+        return pd.DataFrame(), 0
 
 # --- HIỂN THỊ ---
-df = load_data_direct()
+df, total_read = load_data_expert_v2()
 
-st.title("🛡️ DỮ LIỆU THỰC TẾ (V1800)")
+st.title("🛡️ Dashboard Quản Trị Lỗi - Live V2000")
 
 if not df.empty:
-    c1, c2 = st.columns(2)
-    c1.metric("TỔNG CA HỎNG THẬT", len(df))
-    c2.metric("SỐ MÁY LỖI", df['MÃ_MÁY'].nunique())
-    
-    st.write("### Danh sách đối soát (Nếu bảng này sai, file Sheets chưa lưu):")
-    st.dataframe(df, use_container_width=True)
-    
-    fig = px.histogram(df, x="NGÀY", title="Biểu đồ phân bổ ca hỏng")
-    st.plotly_chart(fig, use_container_width=True)
+    # Sidebar lọc
+    with st.sidebar:
+        if st.button('🔄 LÀM MỚI DỮ LIỆU', use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+        sel_month = st.selectbox("Chọn Tháng", ["Tất cả"] + sorted(df['THÁNG'].unique().tolist()))
+        
+    df_view = df if sel_month == "Tất cả" else df[df['THÁNG'] == sel_month]
+
+    # KPI Sạch
+    c1, c2, c3 = st.columns(3)
+    c1.metric("TỔNG CA LỖI THỰC", len(df_view))
+    c2.metric("SỐ THIẾT BỊ HỎNG", df_view['MÃ_MÁY'].nunique())
+    c3.metric("DÒNG RÁC ĐÃ LOẠI", total_read - len(df))
+
+    # Tabs
+    t1, t2 = st.tabs(["📊 BIỂU ĐỒ XU HƯỚNG", "📁 DỮ LIỆU ĐỐI SOÁT"])
+    with t1:
+        trend = df_view.groupby('NGÀY').size().reset_index(name='Số ca')
+        fig = px.line(trend, x='NGÀY', y='Số ca', markers=True, title="Xu hướng lỗi hằng ngày")
+        fig.update_traces(line_color='#007AFF', fill='tozeroy')
+        st.plotly_chart(fig, use_container_width=True)
+        
+
+    with t2:
+        st.write("Dữ liệu Python đã 'điền vào chỗ trống' thành công:")
+        st.dataframe(df_view, use_container_width=True)
 else:
-    st.error("Chưa đọc được dữ liệu. Sếp hãy kiểm tra lại link Sheets hoặc quyền chia sẻ (Anyone with link)!")
+    st.error("❌ Hệ thống vẫn không thấy dữ liệu.")
+    st.info("Sếp hãy kiểm tra 1 việc duy nhất: Mở file Sheets, chọn File -> Share -> Anyone with the link can VIEW.")
