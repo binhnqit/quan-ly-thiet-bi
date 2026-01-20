@@ -4,14 +4,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 from io import BytesIO
 
-# --- CẤU HÌNH HỆ THỐNG ---
-st.set_page_config(page_title="Hệ Thống Quản Trị Nhất Thể V16", layout="wide")
+# --- 1. CẤU HÌNH HỆ THỐNG ---
+st.set_page_config(page_title="Hệ Thống Quản Trị V16.1", layout="wide")
 
-# ==========================================
-# MODULE 1: DỮ LIỆU LỊCH SỬ (FILE CŨ)
-# ==========================================
+# --- 2. HÀM ĐỌC DỮ LIỆU FILE 1 (LỊCH SỬ - GỐC) ---
 @st.cache_data(ttl=2)
-def load_data_old_file():
+def load_data_history():
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-UP5WFVE63byPckNy_lsT9Rys84A8pPq6cm6rFFBbOnPAsSl1QDLS_A9E45oytg/pub?output=csv"
     try:
         df_raw = pd.read_csv(url, dtype=str, header=None, skiprows=1).fillna("0")
@@ -32,13 +30,10 @@ def load_data_old_file():
         return pd.DataFrame(clean_data)
     except: return pd.DataFrame()
 
-# ==========================================
-# MODULE 2: QUẢN LÝ KHO 2 MIỀN (FILE MỚI)
-# ==========================================
+# --- 3. HÀM ĐỌC DỮ LIỆU FILE 2 (KHO 2 CHI NHÁNH) ---
 @st.cache_data(ttl=2)
-def load_dual_branch_data():
+def load_data_warehouse():
     sheet_id = "1GaWsUJutV4wixR3RUBZSTIMrgaD8fOIi"
-    # GID cho Đà Nẵng (602348620) và Miền Bắc (1626219342)
     urls = {
         "ĐÀ NẴNG": f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=602348620",
         "MIỀN BẮC": f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=1626219342"
@@ -46,8 +41,7 @@ def load_dual_branch_data():
     all_data = []
     for branch, url in urls.items():
         try:
-            # Đọc từ dòng 1 (Tiêu đề cột)
-            df_temp = pd.read_csv(url, skiprows=0).fillna("")
+            df_temp = pd.read_csv(url).fillna("")
             df_temp.columns = [c.strip().upper() for c in df_temp.columns]
             for _, row in df_temp.iterrows():
                 ma_may = str(row.get('MÃ SỐ MÁY', '')).strip()
@@ -58,7 +52,6 @@ def load_dual_branch_data():
                 sua_nb = str(row.get('SỬA NỘI BỘ', '')).upper()
                 hu_ko_sua = str(row.get('HƯ KHÔNG SỬA ĐƯỢC', '')).strip()
 
-                # Logic phân loại trạng thái chuyên gia
                 status = "🟢 ĐÃ TRẢ/XONG" if pd.notnull(d_tra) or "OK" in str(row.get('GIAO LẠI ĐN', '')).upper() else "🟡 ĐANG XỬ LÝ"
                 if "THANH LÝ" in sua_nb or hu_ko_sua != "": status = "🔴 THANH LÝ/HỦY"
 
@@ -70,51 +63,97 @@ def load_dual_branch_data():
         except: continue
     return pd.DataFrame(all_data)
 
-# --- CHẠY HỆ THỐNG ---
-df_old = load_data_old_file()
-df_new = load_dual_branch_data()
+# --- 4. KHỞI CHẠY DỮ LIỆU ---
+df_hist = load_data_history()
+df_ware = load_data_warehouse()
 
-# GIAO DIỆN EXECUTIVE
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3208/3208726.png", width=80)
-    st.title("EXECUTIVE HUB V16")
-    if st.button('🔄 ĐỒNG BỘ TOÀN HỆ THỐNG'):
-        st.cache_data.clear()
-        st.rerun()
-
-# PHÂN CHIA TABS NHẤT THỂ
-t1, t2, t3, t4, t5, t6, t7 = st.tabs([
-    "📊 XU HƯỚNG", "💰 TÀI CHÍNH", "🤖 AI AI", 
-    "📁 DATA MASTER", "🩺 SỨC KHỎE", "🔮 DỰ BÁO", "🚀 KHO 2 CHI NHÁNH"
-])
-
-# [Tab 1-6 giữ nguyên logic từ V15.2 của sếp - Không thay đổi code cũ]
-with t1:
-    if not df_old.empty:
-        st.subheader("Phân tích từ File Lịch sử cũ")
-        st.plotly_chart(px.bar(df_old.groupby('THÁNG').size().reset_index(), x='THÁNG', y=0, text_auto=True, title="Số ca hỏng theo tháng"), use_container_width=True)
-
-# TAB 7: ĐIỂM NHẤN MỚI
-with t7:
-    st.header("🚀 Quản Lý Luồng Máy Đà Nẵng & Miền Bắc")
-    if not df_new.empty:
-        # KPI của Case mới
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Tổng Nhận (Kho)", len(df_new))
-        k2.metric("Đang xử lý", len(df_new[df_new['TRẠNG THÁI'] == "🟡 ĐANG XỬ LÝ"]))
-        k3.metric("Thanh lý/Hủy", len(df_new[df_new['TRẠNG THÁI'] == "🔴 THANH LÝ/HỦY"]))
-        k4.metric("Đã hoàn thành", len(df_new[df_new['TRẠNG THÁI'] == "🟢 ĐÃ TRẢ/XONG"]))
-
-        # Biểu đồ so sánh 2 miền
-        st.subheader("So sánh hiệu suất 2 chi nhánh")
-        fig_br = px.bar(df_new.groupby(['CHI NHÁNH', 'TRẠNG THÁI']).size().reset_index(name='Số lượng'), 
-                        x='CHI NHÁNH', y='Số lượng', color='TRẠNG THÁI', barmode='group')
-        st.plotly_chart(fig_br, use_container_width=True)
+if not df_hist.empty:
+    # SIDEBAR QUẢN TRỊ (CHUNG CHO FILE 1)
+    with st.sidebar:
+        st.image("https://cdn-icons-png.flaticon.com/512/3208/3208726.png", width=80)
+        st.title("EXECUTIVE HUB V16.1")
+        if st.button('🔄 ĐỒNG BỘ TOÀN HỆ THỐNG'):
+            st.cache_data.clear()
+            st.rerun()
         
+        all_years = sorted(df_hist['NĂM'].unique(), reverse=True)
+        sel_year = st.selectbox("📅 Chọn năm báo cáo", all_years)
+        df_y = df_hist[df_hist['NĂM'] == sel_year]
+        
+        all_months = sorted(df_y['THÁNG'].unique())
+        sel_month = st.multiselect("🗓️ Lọc Tháng", all_months, default=all_months)
+        df_final = df_y[df_y['THÁNG'].isin(sel_month)]
 
-        st.subheader("Danh sách chi tiết kho hiện tại")
-        st.dataframe(df_new, use_container_width=True)
-    else:
-        st.warning("Đang kết nối tới File mới, vui lòng chờ...")
+        st.write("---")
+        csv = df_final.to_csv(index=False).encode('utf-8-sig')
+        st.download_button("📥 Tải Báo Cáo CSV", csv, f"Bao_cao_{sel_year}.csv", "text/csv")
 
-# Các tab khác sếp cứ giữ nguyên logic hiển thị từ bản V15.2
+    # GIAO DIỆN CHÍNH
+    st.markdown(f"## 🛡️ HỆ THỐNG QUẢN TRỊ TẬP TRUNG - {sel_year}")
+    
+    # KPI HÀNG ĐẦU (FILE 1)
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.metric("Tổng ca hỏng", f"{len(df_final)} ca")
+    kpi2.metric("Số máy hỏng", f"{df_final['MÃ_MÁY'].nunique()} máy")
+    kpi3.metric("Tổng chi phí", f"{df_final['CP_THUC_TE'].sum():,.0f} đ")
+    cl = df_final['CHENH_LECH'].sum()
+    kpi4.metric("Chênh lệch NS", f"{cl:,.0f} đ", delta=f"{cl:,.0f}", delta_color="inverse")
+
+    # --- HỆ THỐNG TABS PHỤC HỒI ---
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs([
+        "📊 XU HƯỚNG", "💰 TÀI CHÍNH", "🤖 TRỢ LÝ AI", 
+        "📁 DATA MASTER", "🩺 SỨC KHỎE", "🔮 DỰ BÁO", "🚀 KHO 2 MIỀN"
+    ])
+
+    with t1: # FIX LỖI BIỂU ĐỒ TRONG ẢNH SẾP GỬI
+        st.subheader("📈 So sánh lượng máy hư qua các tháng")
+        monthly_data = df_y.groupby('THÁNG').size().reset_index(name='Số ca')
+        fig_trend = px.bar(monthly_data, x='THÁNG', y='Số ca', text_auto=True, color_discrete_sequence=['#007AFF'])
+        fig_trend.update_xaxes(type='category') # Đảm bảo hiện đủ các tháng
+        st.plotly_chart(fig_trend, use_container_width=True)
+
+        c_p, c_t = st.columns(2)
+        with c_p:
+            st.plotly_chart(px.pie(df_final, names='VÙNG', title="Tỷ lệ theo Miền"), use_container_width=True)
+        with c_t:
+            st.plotly_chart(px.bar(df_final['MÃ_MÁY'].value_counts().head(10).reset_index(), x='count', y='MÃ_MÁY', orientation='h', title="Top 10 máy hỏng nhiều"), use_container_width=True)
+
+    with t2:
+        cost_df = df_final.groupby('LINH_KIỆN')[['CP_DU_KIEN', 'CP_THUC_TE']].sum().reset_index()
+        st.plotly_chart(px.bar(cost_df, x='LINH_KIỆN', y=['CP_DU_KIEN', 'CP_THUC_TE'], barmode='group', title="Đối soát chi phí"), use_container_width=True)
+
+    with t3:
+        st.subheader("🤖 Trợ lý AI - Nhận định")
+        top_m = df_final['MÃ_MÁY'].value_counts().idxmax()
+        st.info(f"AI Nhận định: Máy **{top_m}** đang gặp sự cố nhiều nhất trong giai đoạn này. Cần kiểm tra điều kiện vận hành.")
+
+    with t4: st.dataframe(df_final, use_container_width=True)
+
+    with t5: # SỨC KHỎE
+        h_db = df_hist.groupby('MÃ_MÁY').agg({'NGÀY': 'count', 'CP_THUC_TE': 'sum'}).reset_index()
+        h_db.columns = ['Mã Máy', 'Tổng lần hỏng', 'Tổng chi phí']
+        st.dataframe(h_db.sort_values('Tổng lần hỏng', ascending=False), use_container_width=True)
+
+    with t6: # DỰ BÁO
+        st.subheader("🔮 Dự báo & Cảnh báo sớm")
+        df_s = df_hist.sort_values(['MÃ_MÁY', 'NGÀY'])
+        df_s['KC'] = df_s.groupby('MÃ_MÁY')['NGÀY'].diff().dt.days
+        warns = df_s[df_s['KC'] <= 60]
+        if not warns.empty: st.warning(f"Cảnh báo: Có {len(warns)} máy hỏng lặp lại nhanh!")
+        st.table((df_hist['LINH_KIỆN'].value_counts() / (len(df_hist['NĂM'].unique())*12)).round(1).head(5))
+
+    with t7: # MODULE KHO MỚI
+        st.header("🚀 Quản lý Kho Đà Nẵng & Miền Bắc")
+        if not df_ware.empty:
+            w1, w2, w3 = st.columns(3)
+            w1.metric("Tổng nhận kho", len(df_ware))
+            w2.metric("Đang xử lý", len(df_ware[df_ware['TRẠNG THÁI'] == "🟡 ĐANG XỬ LÝ"]))
+            w3.metric("Thanh lý/Hủy", len(df_ware[df_ware['TRẠNG THÁI'] == "🔴 THANH LÝ/HỦY"]))
+            
+            st.plotly_chart(px.bar(df_ware.groupby(['CHI NHÁNH', 'TRẠNG THÁI']).size().reset_index(name='Số lượng'), x='CHI NHÁNH', y='Số lượng', color='TRẠNG THÁI', barmode='group'), use_container_width=True)
+            st.dataframe(df_ware, use_container_width=True)
+        else:
+            st.error("Chưa kết nối được File Kho. Sếp hãy kiểm tra link!")
+
+else:
+    st.warning("Dữ liệu lịch sử đang trống hoặc lỗi định dạng.")
