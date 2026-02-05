@@ -1,4 +1,6 @@
 # ui/ceo_view.py
+import sys
+import os
 import streamlit as st
 import plotly.express as px
 from config import ORANGE_PALETTE
