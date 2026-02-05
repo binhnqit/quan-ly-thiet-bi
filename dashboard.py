@@ -1,6 +1,11 @@
 # ui/ceo_view.py
 import sys
 import os
+# Thêm thư mục hiện tại vào đường dẫn tìm kiếm của Python
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Sau đó mới import các module của bạn
+from config import URLS, APP_NAME, ORANGE_PALETTE
 import streamlit as st
 import plotly.express as px
 from config import ORANGE_PALETTE
